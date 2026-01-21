@@ -32,6 +32,8 @@ def load_and_clean_data(csv_path: str) -> pd.DataFrame:
         df['rate_13min'] = df['13分率_全体']
         df['rate_13min_std'] = df['13分率_全体_std']
         df['closest_rate'] = df['直近隊率_全体']
+        df['closest_rate_severe'] = df['直近隊率_重症']
+        df['closest_rate_mild'] = df['直近隊率_軽症']
         df['test_start'] = df['テスト開始日']
         df['strategy_name'] = df['戦略表示名']
     
@@ -189,6 +191,8 @@ def prepare_table_data(df: pd.DataFrame) -> list:
             'rate_6min': f"{row['rate_6min_severe']:.1f}" if pd.notna(row['rate_6min_severe']) else 'N/A',
             'rate_13min': f"{row['rate_13min']:.1f}" if pd.notna(row['rate_13min']) else 'N/A',
             'closest_rate': f"{row['closest_rate']:.1f}" if pd.notna(row.get('closest_rate')) else 'N/A',
+            'closest_rate_severe': f"{row['closest_rate_severe']:.1f}" if pd.notna(row.get('closest_rate_severe')) else 'N/A',
+            'closest_rate_mild': f"{row['closest_rate_mild']:.1f}" if pd.notna(row.get('closest_rate_mild')) else 'N/A',
         })
     
     return table_data
@@ -681,6 +685,70 @@ def generate_html(df: pd.DataFrame, output_path: str):
             color: var(--text-secondary);
             font-size: 12px;
         }}
+        
+        /* 戦略フィルター（チェックボックス） */
+        .strategy-filter {{
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }}
+        
+        .strategy-filter-title {{
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        
+        .strategy-filter-title button {{
+            font-size: 11px;
+            padding: 4px 8px;
+            background: var(--bg-secondary);
+            border: none;
+            border-radius: 4px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            margin-left: 8px;
+        }}
+        
+        .strategy-filter-title button:hover {{
+            background: var(--accent-blue);
+            color: white;
+        }}
+        
+        .strategy-checkboxes {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }}
+        
+        .strategy-checkbox {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 13px;
+        }}
+        
+        .strategy-checkbox:hover {{
+            background: var(--accent-blue);
+            color: white;
+        }}
+        
+        .strategy-checkbox input {{
+            cursor: pointer;
+        }}
+        
+        .strategy-checkbox.unchecked {{
+            opacity: 0.5;
+        }}
     </style>
 </head>
 <body>
@@ -698,6 +766,18 @@ def generate_html(df: pd.DataFrame, output_path: str):
     </div>
     
     <div class="content">
+        <!-- グローバル戦略フィルター -->
+        <div class="strategy-filter">
+            <div class="strategy-filter-title">
+                🎯 表示する戦略を選択
+                <button onclick="selectAllStrategies()">すべて選択</button>
+                <button onclick="deselectAllStrategies()">すべて解除</button>
+                <button onclick="selectPPOOnly()">PPOのみ</button>
+                <button onclick="selectNonPPOOnly()">非PPOのみ</button>
+            </div>
+            <div class="strategy-checkboxes" id="strategyCheckboxes"></div>
+        </div>
+        
         <!-- 概要タブ -->
         <div id="overview" class="tab-panel active">
             <div class="summary-grid">
@@ -852,7 +932,9 @@ def generate_html(df: pd.DataFrame, output_path: str):
                                 <th class="num">全体RT</th>
                                 <th class="num">6分率重症</th>
                                 <th class="num">13分率</th>
-                                <th class="num">直近隊率</th>
+                                <th class="num">直近隊率全体</th>
+                                <th class="num">直近隊率重症</th>
+                                <th class="num">直近隊率軽症</th>
                             </tr>
                         </thead>
                         <tbody id="dataTableBody"></tbody>
@@ -880,6 +962,9 @@ def generate_html(df: pd.DataFrame, output_path: str):
         // 現在選択中の期間
         let currentPeriod = barData.periods[0];
         
+        // 選択中の戦略（フィルター用）
+        let selectedStrategies = new Set(barData.all_strategies);
+        
         // チャートインスタンス
         let severeRtChart, rate13minChart, rate6minChart, closestRateChart, overviewChart, ppoCompareChart;
         
@@ -888,6 +973,98 @@ def generate_html(df: pd.DataFrame, output_path: str):
             '#3b82f6', '#22c55e', '#ef4444', '#eab308', '#a855f7',
             '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'
         ];
+        
+        // 戦略フィルター初期化
+        function initStrategyFilter() {{
+            const container = document.getElementById('strategyCheckboxes');
+            container.innerHTML = barData.all_strategies.map(s => `
+                <label class="strategy-checkbox">
+                    <input type="checkbox" value="${{s}}" checked onchange="onStrategyFilterChange()">
+                    ${{s}}
+                </label>
+            `).join('');
+        }}
+        
+        // 戦略フィルター変更時
+        function onStrategyFilterChange() {{
+            selectedStrategies = new Set(
+                Array.from(document.querySelectorAll('#strategyCheckboxes input:checked')).map(cb => cb.value)
+            );
+            
+            // チェックボックスの見た目を更新
+            document.querySelectorAll('.strategy-checkbox').forEach(label => {{
+                const input = label.querySelector('input');
+                label.classList.toggle('unchecked', !input.checked);
+            }});
+            
+            // 各表示を更新
+            updateAllDisplays();
+        }}
+        
+        // すべて選択
+        function selectAllStrategies() {{
+            document.querySelectorAll('#strategyCheckboxes input').forEach(cb => cb.checked = true);
+            onStrategyFilterChange();
+        }}
+        
+        // すべて解除
+        function deselectAllStrategies() {{
+            document.querySelectorAll('#strategyCheckboxes input').forEach(cb => cb.checked = false);
+            onStrategyFilterChange();
+        }}
+        
+        // PPOのみ選択
+        function selectPPOOnly() {{
+            document.querySelectorAll('#strategyCheckboxes input').forEach(cb => {{
+                cb.checked = cb.value.includes('PPO');
+            }});
+            onStrategyFilterChange();
+        }}
+        
+        // 非PPOのみ選択
+        function selectNonPPOOnly() {{
+            document.querySelectorAll('#strategyCheckboxes input').forEach(cb => {{
+                cb.checked = !cb.value.includes('PPO');
+            }});
+            onStrategyFilterChange();
+        }}
+        
+        // 全表示を更新
+        function updateAllDisplays() {{
+            updateCharts();
+            updateOverviewChart();
+            renderHeatmap('heatmapSevere', heatmapSevere, true);
+            renderHeatmap('heatmapOverall', heatmapOverall, true);
+            renderHeatmap('heatmap6min', heatmap6min, false);
+            renderHeatmap('heatmap13min', heatmap13min, false);
+            renderPpoCards();
+            renderTable();
+            filterTable();
+        }}
+        
+        // 概要チャート更新
+        function updateOverviewChart() {{
+            // 戦略ごとの平均重症RTを計算（フィルター適用）
+            const strategyAvgRt = {{}};
+            Object.values(barData.by_period).forEach(period => {{
+                period.strategies.forEach((s, i) => {{
+                    if (!selectedStrategies.has(s)) return;
+                    if (!strategyAvgRt[s]) strategyAvgRt[s] = [];
+                    strategyAvgRt[s].push(period.severe_rt[i]);
+                }});
+            }});
+            
+            const avgLabels = Object.keys(strategyAvgRt);
+            const avgData = avgLabels.map(s => {{
+                const vals = strategyAvgRt[s].filter(v => v != null);
+                return vals.length ? vals.reduce((a, b) => a + b) / vals.length : 0;
+            }});
+            
+            overviewChart.data.labels = avgLabels;
+            overviewChart.data.datasets[0].data = avgData;
+            overviewChart.data.datasets[0].backgroundColor = avgLabels.map((_, i) => colors[i % colors.length]);
+            overviewChart.update();
+        }}
         
         // タブ切り替え
         function showTab(tabId) {{
@@ -916,30 +1093,36 @@ def generate_html(df: pd.DataFrame, output_path: str):
         // チャート更新
         function updateCharts() {{
             const periodData = barData.by_period[currentPeriod];
-            const strategies = periodData.strategies;
-            const bgColors = strategies.map((_, i) => colors[i % colors.length]);
+            
+            // フィルター適用
+            const filteredIndices = periodData.strategies
+                .map((s, i) => selectedStrategies.has(s) ? i : -1)
+                .filter(i => i >= 0);
+            
+            const strategies = filteredIndices.map(i => periodData.strategies[i]);
+            const bgColors = filteredIndices.map((_, i) => colors[i % colors.length]);
             
             // 重症RTチャート
             severeRtChart.data.labels = strategies;
-            severeRtChart.data.datasets[0].data = periodData.severe_rt;
+            severeRtChart.data.datasets[0].data = filteredIndices.map(i => periodData.severe_rt[i]);
             severeRtChart.data.datasets[0].backgroundColor = bgColors;
             severeRtChart.update();
             
             // 13分率チャート
             rate13minChart.data.labels = strategies;
-            rate13minChart.data.datasets[0].data = periodData.rate_13min;
+            rate13minChart.data.datasets[0].data = filteredIndices.map(i => periodData.rate_13min[i]);
             rate13minChart.data.datasets[0].backgroundColor = bgColors;
             rate13minChart.update();
             
             // 6分率チャート
             rate6minChart.data.labels = strategies;
-            rate6minChart.data.datasets[0].data = periodData.rate_6min_severe;
+            rate6minChart.data.datasets[0].data = filteredIndices.map(i => periodData.rate_6min_severe[i]);
             rate6minChart.data.datasets[0].backgroundColor = bgColors;
             rate6minChart.update();
             
             // 直近隊率チャート
             closestRateChart.data.labels = strategies;
-            closestRateChart.data.datasets[0].data = periodData.closest_rate;
+            closestRateChart.data.datasets[0].data = filteredIndices.map(i => periodData.closest_rate[i]);
             closestRateChart.data.datasets[0].backgroundColor = bgColors;
             closestRateChart.update();
         }}
@@ -954,20 +1137,34 @@ def generate_html(df: pd.DataFrame, output_path: str):
             }});
             html += '</tr></thead><tbody>';
             
-            // 各列の最良値を計算
+            // フィルタリングされた戦略のインデックス
+            const filteredIndices = data.strategies
+                .map((s, i) => selectedStrategies.has(s) ? i : -1)
+                .filter(i => i >= 0);
+            
+            // フィルタリングされたデータで最良値を計算
             const bestInCol = data.periods.map((_, colIdx) => {{
-                const colValues = data.values.map(row => row[colIdx]).filter(v => v != null && !isNaN(v));
+                const colValues = filteredIndices
+                    .map(rowIdx => data.values[rowIdx][colIdx])
+                    .filter(v => v != null && !isNaN(v));
+                if (colValues.length === 0) return null;
                 return isLowerBetter ? Math.min(...colValues) : Math.max(...colValues);
             }});
             
-            data.strategies.forEach((strategy, rowIdx) => {{
+            // フィルタリングされた全値（色計算用）
+            const allFilteredValues = filteredIndices
+                .flatMap(rowIdx => data.values[rowIdx])
+                .filter(v => v != null && !isNaN(v));
+            
+            filteredIndices.forEach(rowIdx => {{
+                const strategy = data.strategies[rowIdx];
                 html += `<tr><td class="strategy-cell">${{strategy}}</td>`;
                 data.values[rowIdx].forEach((val, colIdx) => {{
                     if (val == null || isNaN(val)) {{
                         html += '<td class="value-cell">-</td>';
                     }} else {{
-                        const isBest = Math.abs(val - bestInCol[colIdx]) < 0.01;
-                        const color = getHeatmapColor(val, data.values.flat().filter(v => v != null), isLowerBetter);
+                        const isBest = bestInCol[colIdx] != null && Math.abs(val - bestInCol[colIdx]) < 0.01;
+                        const color = getHeatmapColor(val, allFilteredValues, isLowerBetter);
                         html += `<td class="value-cell ${{isBest ? 'best' : ''}}" style="background: ${{color}}">${{val.toFixed(2)}}</td>`;
                     }}
                 }});
@@ -1000,7 +1197,10 @@ def generate_html(df: pd.DataFrame, output_path: str):
             const container = document.getElementById('ppoCards');
             let html = '';
             
-            ppoData.data.forEach(model => {{
+            // フィルター適用
+            const filteredModels = ppoData.data.filter(model => selectedStrategies.has(model.name));
+            
+            filteredModels.forEach(model => {{
                 html += `
                 <div class="ppo-card">
                     <div class="model-name">${{model.name}}</div>
@@ -1038,7 +1238,7 @@ def generate_html(df: pd.DataFrame, output_path: str):
                 `;
             }});
             
-            container.innerHTML = html || '<p>PPOモデルのデータがありません</p>';
+            container.innerHTML = html || '<p>選択されたPPOモデルがありません</p>';
         }}
         
         // テーブル描画
@@ -1059,6 +1259,8 @@ def generate_html(df: pd.DataFrame, output_path: str):
                     <td class="num">${{row.rate_6min}}</td>
                     <td class="num">${{row.rate_13min}}</td>
                     <td class="num">${{row.closest_rate}}</td>
+                    <td class="num">${{row.closest_rate_severe}}</td>
+                    <td class="num">${{row.closest_rate_mild}}</td>
                 </tr>
                 `;
             }});
@@ -1073,13 +1275,17 @@ def generate_html(df: pd.DataFrame, output_path: str):
             
             document.querySelectorAll('#dataTableBody tr').forEach(row => {{
                 const matchPeriod = !periodFilter || row.dataset.period === periodFilter;
-                const matchStrategy = !strategyFilter || row.dataset.strategy === strategyFilter;
-                row.style.display = matchPeriod && matchStrategy ? '' : 'none';
+                const matchStrategyDropdown = !strategyFilter || row.dataset.strategy === strategyFilter;
+                const matchStrategyGlobal = selectedStrategies.has(row.dataset.strategy);
+                row.style.display = matchPeriod && matchStrategyDropdown && matchStrategyGlobal ? '' : 'none';
             }});
         }}
         
         // 初期化
         document.addEventListener('DOMContentLoaded', function() {{
+            // 戦略フィルター初期化
+            initStrategyFilter();
+            
             // 動的要素の生成
             
             // 1. ランキング

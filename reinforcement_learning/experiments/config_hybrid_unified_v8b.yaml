@@ -1,45 +1,43 @@
 # ================================================================
-# config_hybrid_unified_v7_time.yaml
-# リング4 + 時間重視版（time=0.6, coverage=0.4）
+# config_hybrid_unified_v8b_scaled.yaml
+# 報酬スケールを傷病度考慮運用のスコアリングに近づけた設定
 # 
-# 【設定】
-# - sample_radius: 4（61セル）
-# - time_weight: 0.6（応答時間重視）
-# - coverage_weight: 0.4
-# - coverage_penalty_scale: 35
+# 【問題の分析】
+# 傷病度考慮運用のスコア:
+#   Score = 0.6 × (travel_time/13min) + 0.4 × CoverageLoss
+#   → 範囲: 約0〜1（スコアが低いほど良い）
 # 
-# 【目的】
-# - v7が全体RT悪化した原因が「カバレッジ重視しすぎ」かを検証
-# - 傷病度考慮運用と同じ重み配分（time=0.6, cov=0.4）
+# 現在のPPO報酬:
+#   time_reward = 10 × (1 - t/13) → 範囲: 0〜10
+#   coverage_reward = -35 × loss → 範囲: -35〜0
+#   → カバレッジペナルティが時間報酬を圧倒
+# 
+# 【修正方針】
+# 報酬スケールを0-1に近づけることで、傷病度考慮運用の
+# スコアリングと同等のバランスを実現
 # ================================================================
 
-# ベース設定を継承
 inherits: ./config.yaml
 
-# ================================================================
-# 実験設定
-# ================================================================
 experiment:
-  name: "hybrid_unified_v7_time"
+  name: "hybrid_unified_v8b_scaled"
   description: |
-    ハイブリッドPPO v7_time: リング4 + 時間重視版
+    ハイブリッドPPO v8b: 報酬スケールを傷病度考慮運用に合わせる
     
-    【設定】
-    - sample_radius: 4（61セル）
-    - time_weight: 0.6（応答時間重視）
-    - coverage_weight: 0.4
+    【修正内容】
+    1. mild_max_bonus: 10 → 1.0（正規化）
+    2. coverage_penalty_scale: 35 → 1.0（正規化）
+    3. これにより、time_reward ∈ [0, 1], coverage_reward ∈ [-1, 0]
+    4. total_reward = 0.6 × time + 0.4 × coverage ∈ [-0.4, 0.6]
     
-    【目的】
-    - v7が全体RT悪化した原因が「カバレッジ重視しすぎ」かを検証
-    - 傷病度考慮運用と同じ重み配分で学習
+    【期待される効果】
+    - 傷病度考慮運用のスコアリングと同等のバランス
+    - カバレッジペナルティが時間報酬を圧倒しない
   seed: 2025
   device: "cuda"
 
-# ================================================================
-# PPO設定
-# ================================================================
 ppo:
-  n_episodes: 3000
+  n_episodes: 500
   batch_size: 512
   n_epochs: 4
   clip_epsilon: 0.1
@@ -51,13 +49,9 @@ ppo:
   
   gamma: 0.99
   gae_lambda: 0.95
-  entropy_coef: 0.035  # v4と同じ
+  entropy_coef: 0.035
   max_grad_norm: 0.5
 
-# ================================================================
-# 状態空間（46次元）
-# ★★★ カバレッジ計算の修正 ★★★
-# ================================================================
 state_encoding:
   mode: 'compact'
   top_k: 10
@@ -65,20 +59,20 @@ state_encoding:
     max_travel_time_minutes: 30
     max_station_distance_km: 10
   
-  # ★★★ カバレッジ考慮型ソート設定（傷病度考慮運用と完全統一） ★★★
   coverage_aware_sorting:
     enabled: true
-    time_weight: 0.6       # 傷病度考慮運用と同じ（ソート用）
-    coverage_weight: 0.4   # 傷病度考慮運用と同じ（ソート用）
-    sample_size: 20        # 傷病度考慮運用と同じ
-    sample_radius: 4       # ★★★ リング4（中間設定）★★★
+    time_weight: 0.6
+    coverage_weight: 0.4
+    sample_size: 20
+    sample_radius: 6
     pre_filter_size: 30
     use_adaptive_sampling: true
     max_candidates_for_advanced: 50
+  
+  compact_coverage:
+    sample_radius: 6
+    sample_size: 20
 
-# ================================================================
-# ハイブリッドモード
-# ================================================================
 hybrid_mode:
   enabled: true
   severity_classification:
@@ -86,7 +80,8 @@ hybrid_mode:
     mild_conditions: ["軽症", "中等症"]
 
 # ================================================================
-# 報酬設定（v4ベース + リング数統一）
+# 報酬設定
+# ★★★ スケール正規化版 ★★★
 # ================================================================
 reward:
   system:
@@ -99,27 +94,26 @@ reward:
     critical_penalty_scale: 5.0
     critical_penalty_power: 1.5
     
-    mild_max_bonus: 10.0
-    mild_penalty_scale: 1.0
+    # ★★★ 軽症系パラメータ：スケール正規化 ★★★
+    mild_max_bonus: 1.0        # 10 → 1.0（正規化）
+    mild_penalty_scale: 0.1    # ペナルティも小さく
     
-    coverage_w6: 1.0
-    coverage_w13: 0.0
-    coverage_penalty_scale: 35.0  # v4と同じ
+    # ★★★ カバレッジパラメータ：スケール正規化 ★★★
+    coverage_w6: 0.5
+    coverage_w13: 0.5
+    coverage_penalty_scale: 1.0  # 35 → 1.0（正規化）
     
-    time_weight: 0.6       # 時間重視（v7は0.3）
-    coverage_weight: 0.4   # カバレッジ抑制（v7は0.7）
+    # 重み配分は傷病度考慮運用と同一
+    time_weight: 0.6
+    coverage_weight: 0.4
   
-  # ★★★ 報酬計算用カバレッジ設定（傷病度考慮運用と完全統一）★★★
   core:
     mild_params:
-      sample_points: 20      # 傷病度考慮運用と同じ
-      sample_radius: 4       # ★★★ リング4（中間設定）★★★
+      sample_points: 20
+      sample_radius: 6
       coverage_6min_weight: 0.5
       coverage_13min_weight: 0.5
 
-# ================================================================
-# ネットワーク設定
-# ================================================================
 network:
   actor:
     hidden_layers: [128, 64]
@@ -129,7 +123,7 @@ network:
   critic:
     hidden_layers: [128, 64]
     activation: "relu"
-    dropout: 0.2
+    dropout: 0.1
 
 # ================================================================
 # 学習管理（チェックポイント活用）

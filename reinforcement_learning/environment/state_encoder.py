@@ -493,8 +493,13 @@ class CompactStateEncoder:
         self.time_threshold_13min = 780  # 13分
         
         # サンプリング設定（カバレッジ損失計算用）
-        self.coverage_sample_size = 20
-        self.coverage_sample_radius = 2
+        # ★★★ configから読み込むように変更 ★★★
+        # coverage_aware_sorting または compact_coverage から読み込む
+        coverage_config = config.get('state_encoding', {}).get('coverage_aware_sorting', {})
+        if not coverage_config:
+            coverage_config = config.get('state_encoding', {}).get('compact_coverage', {})
+        self.coverage_sample_size = coverage_config.get('sample_size', 20)
+        self.coverage_sample_radius = coverage_config.get('sample_radius', 2)
         
         # 傷病度判定用の定数
         self.severe_conditions = ['重症', '重篤', '死亡']
@@ -507,6 +512,7 @@ class CompactStateEncoder:
         print(f"  Top-K: {top_k}")
         print(f"  状態次元: {self.state_dim}")
         print(f"  構成: 候補隊{top_k}×4={top_k*4}次元 + グローバル5次元 + 傷病度1次元")
+        print(f"  カバレッジ計算: リング{self.coverage_sample_radius}, サンプル{self.coverage_sample_size}")
     
     @property
     def state_dim(self) -> int:
