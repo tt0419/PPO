@@ -1,0 +1,169 @@
+# ================================================================
+# 東京23区 PPO実験用設定ファイル
+# このファイルには実験ごとに変更する可能性が高い項目のみを記載
+# ================================================================
+
+# ベース設定ファイルの継承
+inherits: ./config.yaml
+
+# ================================================================
+# 実験識別
+# ================================================================
+experiment:
+  name: "ppo_tokyo23_continuous_v1"
+  description: "シンプルなPPOで報酬設計を探索-continuousモード"
+  seed: 2025
+
+# ================================================================
+# エリア設定（実験対象地域）
+# ================================================================
+data:
+  area_restriction:
+    enabled: true
+    area_name: "東京23区"
+    districts: [
+      "千代田区", "中央区", "港区", "新宿区", "文京区", "台東区", 
+      "墨田区", "江東区", "品川区", "目黒区", "大田区", "世田谷区", 
+      "渋谷区", "中野区", "杉並区", "豊島区", "北区", "荒川区", 
+      "板橋区", "練馬区", "足立区", "葛飾区", "江戸川区"
+    ]
+    num_ambulances_in_area: 192
+    state_dim: 999  # 192*5+10+8+21
+    action_dim: 192
+  
+  # 学習・評価期間
+  train_periods:
+    - start_date: "20230401"
+      end_date: "20230630"
+  eval_periods:
+    - start_date: "20240401"
+      end_date: "20240630"
+
+# ================================================================
+# 学習設定（主要なハイパーパラメータ）
+# ================================================================
+ppo:
+  n_episodes: 10000
+  batch_size: 1024
+  
+  # 学習率
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001
+    scheduler: "constant"  # "constant", "cosine", "linear"
+  
+  # PPO固有パラメータ
+  n_epochs: 6
+  clip_epsilon: 0.1
+  entropy_coef: 0.015
+
+# ================================================================
+# 報酬モード選択（主要な実験設定）
+# ================================================================
+reward_mode:
+  # ----------------------------------------
+  # 使用する報酬モードを選択（1つだけ有効化）
+  # ----------------------------------------
+  mode: "continuous"  # "simple", "continuous", "discrete", "hybrid"
+  
+  # ----------------------------------------
+  # Simple Mode: 時間ペナルティベース
+  # ----------------------------------------
+  simple:
+    time_penalty_per_minute: -0.5      # 毎分のペナルティ
+    critical_under_6min_bonus: 30.0    # 重症6分達成ボーナス
+    moderate_under_13min_bonus: 10.0   # 中等症13分達成ボーナス
+    mild_under_13min_bonus: 5.0        # 軽症13分達成ボーナス
+    over_13min_penalty: -5.0           # 13分超過ペナルティ
+    over_20min_penalty: -20.0          # 20分超過ペナルティ
+  
+  # ----------------------------------------
+  # Continuous Mode: 連続的な報酬関数
+  # ----------------------------------------
+  continuous:
+    critical:
+      target: 6
+      max_bonus: 50.0
+      penalty_scale: 5.0
+    moderate:
+      target: 13
+      max_bonus: 20.0
+      penalty_scale: 2.0
+    mild:
+      target: 13
+      max_bonus: 10.0
+      penalty_scale: 0.5
+  
+  # ----------------------------------------
+  # Discrete Mode: 離散的な報酬
+  # ----------------------------------------
+  discrete:
+    weights:
+      response_time: 2.0
+      severity_bonus: 3.0
+    penalties:
+      over_6min: -10.0
+      over_13min: -15.0
+      per_minute_over: -2.0
+  
+  # ----------------------------------------
+  # Hybrid Mode: 重症直近隊+軽症PPO
+  # ----------------------------------------
+  hybrid:
+    enabled: false
+    severe_conditions: ["重症", "重篤", "死亡"]
+    mild_conditions: ["軽症", "中等症"]
+    weights:
+      response_time: 0.4
+      coverage: 0.5
+      workload: 0.1
+
+# ================================================================
+# オプション機能のOn/Off
+# ================================================================
+optional_features:
+  # ----------------------------------------
+  # 教師あり学習（模倣学習）
+  # ----------------------------------------
+  teacher:
+    enabled: false
+    strategy: "closest"  # "closest", "optimal"
+    initial_prob: 0.5
+    final_prob: 0.05
+    decay_episodes: 2500
+  
+  # ----------------------------------------
+  # カリキュラム学習
+  # ----------------------------------------
+  curriculum:
+    enabled: false
+    stages:
+      - episodes: [0, 1500]
+        description: "基礎学習フェーズ"
+        goals:
+          - "vs_closest_improvement > -0.1"
+      - episodes: [1500, 3000]
+        description: "改善フェーズ"
+        goals:
+          - "critical_6min_rate > (baseline + 0.05)"
+  
+  # ----------------------------------------
+  # カバレッジペナルティ（simpleモード以外で有効）
+  # ----------------------------------------
+  coverage:
+    enabled: false
+    drop_threshold: 0.05      # カバレッジ低下閾値
+    drop_weight: -20.0        # ペナルティの重み
+    impact_weight: 0.5        # カバレッジ影響度の重み
+
+# ================================================================
+# 評価設定
+# ================================================================
+evaluation:
+  interval: 100
+  n_eval_episodes: 10
+  metrics:
+    - "critical_6min_rate"
+    - "achieved_13min_rate"
+    - "mean_response_time"
+    - "vs_closest_improvement"

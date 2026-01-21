@@ -1,0 +1,162 @@
+PPO救急車配車最適化システムの技術仕様
+1. システム概要
+
+目的: 強化学習（PPO）を用いた救急車配車の最適化
+現在の状態: 第一方面（千代田区・中央区・港区）限定での学習実験中
+課題: 報酬が0になるバグがあり、学習が進んでいない状態
+
+2. 環境設定
+対象エリア
+yamlarea_restriction:
+  enabled: true
+  area_name: "第一方面"
+  districts: ["千代田区", "中央区", "港区"]
+  num_ambulances_in_area: 128  # 仮想救急車を含む
+  virtual_ambulances: 112      # 実際の16台に112台の仮想車両を追加
+データ期間
+yamltrain_periods:
+  - start_date: "20230410"
+  - end_date: "20230414"
+eval_periods:
+  - start_date: "20240408"
+  - end_date: "20240412"
+episode_duration_hours: 24
+3. 状態空間と行動空間
+状態空間（679次元）
+
+救急車情報: 640次元（128台 × 5特徴量）
+
+利用可能性
+現在位置（緯度・経度）
+出動回数
+最終配車からの経過時間
+
+
+事案情報: 10次元
+
+位置（H3インデックス）
+傷病度（重篤/重症/中等症/軽症）
+待機時間
+
+
+時間特徴: 8次元
+
+時刻（sin/cos エンコーディング）
+曜日（one-hot）
+
+
+エリア統計: 21次元
+
+カバレッジ率
+稼働率
+需要密度
+
+
+
+行動空間（128次元）
+
+各次元が1台の救急車に対応
+action_maskで利用不可能な救急車を除外
+
+4. PPOハイパーパラメータ
+yamlppo:
+  n_episodes: 5000
+  batch_size: 512
+  learning_rate:
+    actor: 0.0003    # Actor（方策）ネットワークの学習率
+    critic: 0.001    # Critic（価値）ネットワークの学習率
+  n_epochs: 4        # PPO更新エポック数
+  clip_epsilon: 0.1  # 方策の更新幅制限
+  gamma: 0.99        # 割引率
+  gae_lambda: 0.95   # GAE（一般化優位推定）パラメータ
+  entropy_coef: 0.01 # エントロピー正則化係数
+5. ニューラルネットワーク構造
+Actorネットワーク（方策）
+pythonhidden_layers: [64, 32]
+activation: relu
+initialization: xavier_uniform
+Criticネットワーク（価値関数）
+pythonhidden_layers: [64, 32]
+activation: relu
+init_scale: 0.001  # 初期値を小さく設定
+6. 報酬設計
+yamlreward:
+  core:
+    mode: "simple"  # シンプルモード
+    simple_params:
+      time_penalty_per_minute: -0.25      # 1分あたりペナルティ
+      critical_under_6min_bonus: 20.0     # 重症6分以内ボーナス
+      moderate_under_13min_bonus: 5.0     # 中等症13分以内
+      mild_under_13min_bonus: 2.0         # 軽症13分以内
+      over_13min_penalty: -2.0            # 13分超過ペナルティ
+      over_20min_penalty: -5.0            # 20分超過ペナルティ
+      imitation_bonus: 0.5                # 教師模倣ボーナス
+7. 教師あり学習（模倣学習）
+yamlteacher:
+  enabled: true
+  strategy: closest           # 直近隊戦略を教師とする
+  initial_prob: 1.00         # 初期：100%模倣
+  final_prob: 1.00           # 最終：100%模倣（現在は完全模倣実験中）
+  decay_episodes: 5000       # 減衰期間
+8. 学習の進捗状況
+現在の問題点
+
+報酬が0になるバグ
+
+_log_dispatch_actionメソッドで報酬を0.0で記録
+実際は_calculate_rewardで計算されているが、ログに反映されていない
+
+
+学習パフォーマンス（グラフより）
+
+Episode Rewards: 約320-520の間で変動
+Training Losses: Actor/Criticともに収束
+Evaluation Performance: -70から-110の負の報酬
+
+
+
+9. 評価指標
+yamlevaluation:
+  metrics:
+    - critical_6min_rate      # 重症6分以内達成率
+    - achieved_13min_rate      # 全体13分以内達成率
+    - mean_response_time       # 平均応答時間
+    - vs_closest_improvement   # 直近隊戦略との比較
+10. システムの特徴
+
+仮想救急車の導入
+
+実車16台では選択肢が少なすぎるため、仮想的に112台追加
+学習の安定性向上を狙う
+
+
+カリキュラム学習
+
+Phase 1（0-1500エピソード）: 徹底的な模倣
+Phase 2（1500-3000エピソード）: 重症事案での改善探索
+
+
+リアルタイムシミュレーション
+
+実際の東京消防庁データ（2023-2024年）を使用
+H3六角形グリッドシステムで位置を管理
+移動時間行列は実測値ベース
+
+
+
+11. 技術スタック
+
+フレームワーク: PyTorch
+強化学習: PPO (Proximal Policy Optimization)
+データ処理: Pandas, NumPy
+空間インデックス: Uber H3
+ログ管理: WandB, CSV/JSON
+
+12. 今後の改善点
+
+報酬計算のバグ修正
+報酬スケールの調整（現在の値が小さすぎる可能性）
+仮想救急車数の最適化
+教師確率の段階的減少の実装
+
+このシステムは、実際の救急医療データを用いて、強化学習により最適な配車戦略を学習することを目指していますが、現在は技術的な課題（報酬記録のバグ）により学習が正常に進んでいない状態です。

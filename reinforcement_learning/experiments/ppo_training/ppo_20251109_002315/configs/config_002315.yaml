@@ -1,0 +1,227 @@
+curriculum:
+  enabled: false
+  stages: []
+data:
+  area_restriction:
+    action_dim: 192
+    area_name: 東京23区
+    districts:
+    - 千代田区
+    - 中央区
+    - 港区
+    - 新宿区
+    - 文京区
+    - 台東区
+    - 墨田区
+    - 江東区
+    - 品川区
+    - 目黒区
+    - 大田区
+    - 世田谷区
+    - 渋谷区
+    - 中野区
+    - 杉並区
+    - 豊島区
+    - 北区
+    - 荒川区
+    - 板橋区
+    - 練馬区
+    - 足立区
+    - 葛飾区
+    - 江戸川区
+    enabled: true
+    num_ambulances_in_area: 192
+    state_dim: 999
+  data_paths:
+    grid_mapping: data/tokyo/processed/grid_mapping_res9.json
+    travel_time_matrix: data/tokyo/calibration2/linear_calibrated_response.npy
+  episode_duration_hours: 24
+  eval_periods:
+  - end_date: '20230615'
+    start_date: '20230615'
+  exclude_daytime_ambulances: true
+  max_steps_per_episode: 3000
+  train_periods:
+  - end_date: '20230615'
+    start_date: '20230615'
+evaluation:
+  compare_baselines:
+  - closest
+  - severity_based
+  interval: 100
+  metrics:
+  - mild_mean_rt
+  - mild_13min_rate
+  - overall_mean_rt
+  - overall_13min_rate
+  - dispatch_ratio
+  n_eval_episodes: 5
+experiment:
+  description: 軽症系もレスポンスタイム最優先の単純報酬で学習
+  device: cuda
+  name: hybrid_ppo_rt_focus
+  seed: 42
+hybrid_mode:
+  coverage_evaluation:
+    high_risk_weight: 0.7
+    min_acceptable: 0.6
+    normal_weight: 0.3
+  enabled: true
+  penalties:
+    over_warning: -50.0
+    per_minute_over: -2.0
+  reward_weights:
+    coverage: 0.0
+    response_time: 1.0
+    workload_balance: 0.0
+  severity_classification:
+    mild_conditions:
+    - 軽症
+    - 中等症
+    severe_conditions:
+    - 重症
+    - 重篤
+    - 死亡
+  time_thresholds:
+    good: 13
+    warning: 20
+inherits: ./config.yaml
+network:
+  actor:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 256
+    - 128
+    initialization: xavier_uniform
+  critic:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 256
+    - 128
+    init_scale: 0.001
+  state_encoder:
+    ambulance_features: 8
+    incident_features: 6
+    spatial_features: 16
+    temporal_features: 8
+ppo:
+  batch_size: 1024
+  clip_epsilon: 0.1
+  entropy_coef: 0.015
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001
+    scheduler: constant
+  max_grad_norm: 0.5
+  n_episodes: 5000
+  n_epochs: 6
+reward:
+  core:
+    continuous_params:
+      critical:
+        max_bonus: 50.0
+        penalty_scale: 5.0
+        target: 6
+        weight: 1.0
+      mild:
+        max_bonus: 10.0
+        penalty_scale: 0.5
+        target: 13
+        weight: 1.0
+      moderate:
+        max_bonus: 20.0
+        penalty_scale: 2.0
+        target: 13
+        weight: 1.0
+    coverage_impact_weight: 0.0
+    discrete_params:
+      penalties:
+        over_13min: -15.0
+        over_6min: -10.0
+        per_minute_over: -2.0
+      weights:
+        coverage_preservation: 0.5
+        response_time: 2.0
+        severity_bonus: 3.0
+    hybrid_params:
+      balanced_workload_bonus: 0.0
+      coverage_maintenance_bonus: 0.0
+      good_coverage_bonus: 0.0
+      mild_under_13min_bonus: 5.0
+      moderate_under_13min_bonus: 5.0
+      over_13min_penalty: -15.0
+      over_20min_penalty: -40.0
+      overloaded_penalty: 0.0
+      poor_coverage_penalty: 0.0
+      time_penalty_per_minute: -2.0
+    mode: hybrid
+    simple_params:
+      critical_under_6min_bonus: 30.0
+      imitation_bonus: 0.0
+      mild_under_13min_bonus: 5.0
+      moderate_under_13min_bonus: 10.0
+      over_13min_penalty: -5.0
+      over_20min_penalty: -20.0
+      time_penalty_per_minute: -0.5
+  coverage_params:
+    drop_penalty_threshold: 0.05
+    drop_penalty_weight: -20.0
+    time_threshold_seconds: 600
+  episode:
+    achievement_bonuses:
+      critical_6min_rate: 30.0
+      mild_13min_rate: 30.0
+      mild_under_20min_rate: 10.0
+      rate_13min: 10.0
+      rate_6min: 20.0
+    base_penalty_per_minute: -0.5
+    failure_penalty_per_incident: -1.0
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+    unhandled_call_penalty: -1.0
+reward_mode:
+  mode: hybrid
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重症
+      - 重篤
+      - 死亡
+      reward_weight: 1.0
+      time_limit_seconds: 360
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 1.0
+      time_limit_seconds: 780
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 1.0
+      time_limit_seconds: 780
+  thresholds:
+    golden_time: 360
+    standard_time: 780
+teacher:
+  decay_episodes: 2500
+  enabled: false
+  final_prob: 0.05
+  initial_prob: 0.5
+  strategy: closest
+training:
+  checkpoint_interval: 250
+  early_stopping:
+    enabled: true
+    min_delta: 0.001
+    patience: 500
+  keep_last_n: 5
+  logging:
+    interval: 10
+    tensorboard: true
+    wandb: true

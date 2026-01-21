@@ -1,0 +1,134 @@
+curriculum:
+  enabled: true
+  stages:
+  - description: 徹底的な模倣フェーズ。teacher_probは高水準 (0.99 -> 0.6) を維持。
+    episodes:
+    - 0
+    - 1500
+    goals:
+    - vs_closest_improvement > -0.1
+  - description: '模倣を続けつつ(teacher_prob: 0.6 -> 0.3)、重症事案での改善を探索。'
+    episodes:
+    - 1500
+    - 3000
+    goals:
+    - critical_6min_rate > (baseline + 0.05)
+    - achieved_13min_rate > (baseline - 0.02)
+data:
+  area_restriction:
+    area_name: 第一方面
+    districts:
+    - 千代田区
+    - 中央区
+    - 港区
+    enabled: true
+    section_code: 1
+  episode_duration_hours: 24
+  eval_periods:
+  - end_date: '20240415'
+    start_date: '20240401'
+  train_periods:
+  - end_date: '20230415'
+    start_date: '20230401'
+evaluation:
+  compare_baselines:
+  - closest
+  interval: 100
+  metrics:
+  - critical_6min_rate
+  - achieved_13min_rate
+  - mean_response_time
+  - vs_closest_improvement
+  n_eval_episodes: 10
+experiment:
+  description: 【改善版】単純化した報酬と徹底した模倣学習による段階的改善アプローチ
+  device: cuda
+  name: ppo_area1_simple_reward_v1
+  seed: 2025
+inherits: ./config.yaml
+network:
+  actor:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 64
+    - 32
+    initialization: xavier_uniform
+  critic:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 64
+    - 32
+    init_scale: 0.001
+  state_encoder:
+    ambulance_features: 8
+    incident_features: 6
+    spatial_features: 16
+    temporal_features: 8
+ppo:
+  batch_size: 256
+  clip_epsilon: 0.1
+  entropy_coef: 0.01
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 3.0e-05
+    critic: 0.0001
+    scheduler: constant
+  max_grad_norm: 0.5
+  n_episodes: 500
+  n_epochs: 4
+reward:
+  critical_under_6min_bonus: 2.0
+  imitation_bonus: 0.5
+  over_13min_penalty: -2.0
+  penalties:
+    over_13min: -20.0
+    over_6min: -5.0
+    per_minute_over: -1.0
+  time_penalty_per_minute: -0.25
+  weights:
+    coverage_preservation: 0.5
+    response_time: -1.0
+    severity_bonus: 2.0
+    threshold_penalty: -10.0
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重症
+      - 重篤
+      - 死亡
+      reward_weight: 5.0
+      time_limit_seconds: 360
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 1.0
+      time_limit_seconds: 780
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 2.0
+      time_limit_seconds: 480
+  thresholds:
+    golden_time: 360
+    standard_time: 780
+teacher:
+  decay_episodes: 500
+  enabled: true
+  final_prob: 1.0
+  initial_prob: 1.0
+  strategy: closest
+training:
+  checkpoint_interval: 250
+  early_stopping:
+    enabled: true
+    min_delta: 0.001
+    patience: 500
+  keep_last_n: 5
+  logging:
+    interval: 10
+    tensorboard: true
+    wandb: true

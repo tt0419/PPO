@@ -1,0 +1,232 @@
+# config_tokyo23_hybrid.yaml
+# 東京23区全域でのハイブリッドモード実験用設定ファイル
+# ベース: config_tokyo23.yamlの設定を継承し、ハイブリッドモード機能を追加
+
+# ベース設定ファイルを継承
+inherits: ./config.yaml
+
+# ===================================================================
+# ハイブリッドモード戦略
+# 重症系（重症・重篤・死亡）: 直近隊運用で確実に対応
+# 軽症系（軽症・中等症）: PPO学習で効率的な配置を学習
+# ===================================================================
+
+# データパス設定（PPO戦略の初期化に必要）
+data_paths:
+  grid_mapping: "data/tokyo/processed/grid_mapping_res9.json"
+  travel_time_matrix: "data/tokyo/calibration2/linear_calibrated_response.npy"
+
+experiment:
+  name: "hybrid_ppo_tokyo23_June_oneday_v2"
+  description: "学習ができているかの検証で、同日での訓練と検証を実施してみる、エピソード数を500に増やしてみる"
+  seed: 42
+  device: cuda
+
+# -------------------------------------------------------------------
+# 報酬モード設定（reward_mode.modeで報酬計算モードを指定）
+# -------------------------------------------------------------------
+reward_mode:
+  mode: hybrid  # hybridモードを使用
+
+# -------------------------------------------------------------------
+# ハイブリッドモード設定（ems_environment用）
+# -------------------------------------------------------------------
+hybrid_mode:
+  enabled: true
+  
+  # 傷病度分類
+  severity_classification:
+    severe_conditions: ["重症", "重篤", "死亡"]  # 直近隊運用（学習対象外）
+    mild_conditions: ["軽症", "中等症"]           # PPO学習対象
+
+# -------------------------------------------------------------------
+# データ設定 (config_tokyo23.yamlから継承)
+# -------------------------------------------------------------------
+data:
+  area_restriction:
+    enabled: true
+    area_name: "東京23区"
+    section_code: null
+    districts: [
+      "千代田区", "中央区", "港区", "新宿区", "文京区", "台東区", 
+      "墨田区", "江東区", "品川区", "目黒区", "大田区", "世田谷区", 
+      "渋谷区", "中野区", "杉並区", "豊島区", "北区", "荒川区", 
+      "板橋区", "練馬区", "足立区", "葛飾区", "江戸川区"
+    ]
+    # 次元数を明示的に定義
+    num_ambulances_in_area: 192
+    state_dim: 999  # ハイブリッドモードでも同じ状態空間
+    action_dim: 192
+
+  max_steps_per_episode: 3000  
+  episode_duration_hours: 24
+  
+  # 学習期間（軽症系が多い期間と繁忙期の両方を含む）
+  train_periods:
+    - start_date: "20230615"
+      end_date: "20230615"    # 10日間に延長
+    # - start_date: "20231201"  # 繁忙期データ追加
+    #   end_date: "20231210"
+  
+  eval_periods:
+    - start_date: "20230615"
+      end_date: "20230615"
+
+# -------------------------------------------------------------------
+# PPOハイパーパラメータ (軽症系学習に最適化)
+# -------------------------------------------------------------------
+ppo:
+  n_episodes: 500  # 重症系をスキップするため、エピソード数を削減可能
+  batch_size: 1024
+  
+  # 学習率（config_tokyo23.yamlの設定を基本的に継承）
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001  # Criticを高めに維持
+    scheduler: constant
+  
+  # PPOパラメータ
+  n_epochs: 6  # 学習対象が減るため、エポック数を少し増やす
+  clip_epsilon: 0.1
+  gamma: 0.99
+  gae_lambda: 0.95
+  entropy_coef: 0.015  # 軽症系の多様な配置を探索
+  max_grad_norm: 0.5
+
+# -------------------------------------------------------------------
+# 報酬設計 (ハイブリッドモード用に調整)
+# -------------------------------------------------------------------
+reward:
+  # システムレベル設定は継承
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+    unhandled_call_penalty: -1.0
+  
+  # コア報酬設定（ハイブリッドモード用）
+  core:
+    mode: "hybrid"  # ハイブリッドモードを使用
+    
+    # カバレッジ影響重み（重要！）
+    coverage_impact_weight: 0.5  # カバレッジを報酬に反映（元の設計）
+    
+    # 軽症系用のシンプルな報酬パラメータ
+    hybrid_params:
+      # 基本時間ペナルティ（軽症系のみ適用）
+      time_penalty_per_minute: -0.1  # config_tokyo23より軽め
+      
+      # 軽症系達成ボーナス
+      mild_under_13min_bonus: 5.0
+      moderate_under_13min_bonus: 10.0
+      
+      # 閾値超過ペナルティ
+      over_13min_penalty: -5.0
+      over_20min_penalty: -50.0  # 20分超過は重いペナルティ
+      
+      # カバレッジボーナス（重症系への準備度）
+      good_coverage_bonus: 10.0  # カバレッジ0.8以上
+      coverage_maintenance_bonus: 5.0  # カバレッジ0.6-0.8
+      poor_coverage_penalty: -10.0  # カバレッジ0.6未満
+      
+      # 稼働バランスボーナス
+      balanced_workload_bonus: 2.0
+      overloaded_penalty: -5.0  # 特定救急車の過負荷
+  
+  # カバレッジパラメータ（重症系への準備度評価用）
+  coverage_params:
+    time_threshold_seconds: 360  # 6分（重症系の目標時間）
+    high_risk_areas: []  # 実行時に動的に計算
+    evaluation_interval: 100  # 100イベントごとに評価
+  
+  # エピソード報酬（簡略化）
+  episode:
+    base_penalty_per_minute: -0.3
+    achievement_bonuses:
+      # 重症系（直近隊運用の結果を評価）
+      severe_6min_rate: 50.0  # 重症系6分以内率ボーナス
+      # 軽症系（PPO学習の結果を評価）
+      mild_13min_rate: 30.0
+      mild_under_20min_rate: 20.0  # 20分以内率ボーナス
+    failure_penalty_per_incident: -1.0
+
+# -------------------------------------------------------------------
+# 教師あり学習 (軽症系のみに適用)
+# -------------------------------------------------------------------
+teacher:
+  enabled: false
+  strategy: closest
+  
+  # ハイブリッドモード用：軽症系のみ教師学習
+  apply_to: ["軽症", "中等症"]  # 軽症系のみ
+  
+  # カリキュラム（軽症系の学習を安定化）
+  initial_prob: 0.3   # 軽症系の30%を初期は模倣
+  final_prob: 0.05    # 最終的に5%まで減少
+  decay_episodes: 2000
+
+# -------------------------------------------------------------------
+# ネットワーク設定 (config_tokyo23.yamlから継承)
+# -------------------------------------------------------------------
+network:
+  actor:
+    hidden_layers: [256, 128]
+    activation: relu
+    initialization: xavier_uniform
+  critic:
+    hidden_layers: [256, 128]
+    activation: relu
+    init_scale: 0.001
+
+# -------------------------------------------------------------------
+# 評価設定 (ハイブリッドモード用メトリクス追加)
+# -------------------------------------------------------------------
+evaluation:
+  interval: 100  # 評価間隔を短く
+  n_eval_episodes: 5
+  compare_baselines: ["closest", "severity_based"]
+  
+  # ハイブリッドモード専用メトリクス
+  metrics:
+    # 重症系（直近隊運用）
+    - "severe_6min_rate"
+    - "severe_mean_rt"
+    - "critical_6min_rate"
+    
+    # 軽症系（PPO学習）
+    - "mild_13min_rate"
+    - "mild_20min_rate"
+    - "mild_mean_rt"
+    
+    # 全体評価
+    - "overall_13min_rate"
+    - "overall_mean_rt"
+    - "coverage_score"
+    - "workload_balance"
+    
+    # 比較
+    - "vs_closest_improvement"
+    - "dispatch_ratio"  # 直近隊 vs PPO の比率
+
+# -------------------------------------------------------------------
+# 学習管理
+# -------------------------------------------------------------------
+training:
+  checkpoint_interval: 100
+  early_stopping:
+    enabled: true
+    patience: 10
+    # metric: "mild_20min_rate"  # 20分超過率を監視
+    # mode: "min"  # 最小化
+    min_delta: 2.0
+  
+  logging:
+    interval: 500
+    wandb: true
+    wandb_project: "ems_hybrid_tokyo23"
+    
+    # ハイブリッドモード用ログ
+    hybrid_logs:
+      - "severe_dispatch_count"
+      - "mild_dispatch_count"
+      - "coverage_history"
+      - "warning_episodes"  # 20分超過エピソード

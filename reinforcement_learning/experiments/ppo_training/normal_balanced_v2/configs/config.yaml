@@ -1,0 +1,143 @@
+data:
+  area_restriction:
+    area_name: default
+    districts: []
+    enabled: false
+    num_ambulances_in_area: 192
+  data_paths:
+    grid_mapping: data/tokyo/processed/grid_mapping_res9.json
+    travel_time_matrix: data/tokyo/calibration2/linear_calibrated_response.npy
+  episode_duration_hours: 24
+  eval_periods:
+  - end_date: '20230507'
+    start_date: '20230501'
+  exclude_daytime_ambulances: true
+  train_periods:
+  - end_date: '20230430'
+    start_date: '20230401'
+evaluation:
+  compare_baselines:
+  - closest
+  interval: 100
+  metrics:
+  - critical_6min_rate
+  - achieved_13min_rate
+  - mean_response_time
+  - non_closest_selection_rate
+  n_eval_episodes: 10
+experiment:
+  description: '46次元設計の通常PPO本格学習（バランス版）
+
+
+    ハイブリッド版との違い:
+
+    - 重症系もPPOが選択（直近隊固定ではない）
+
+    - 重症系には6分達成を重視した報酬（指数/べき乗型）
+
+
+    ハイブリッドv2の感触が良いため、同様のバランスを採用:
+
+    - time 50% / coverage 50%
+
+    - coverage_penalty_scale: 20.0
+
+
+    目標:
+
+    - 直近隊選択率: 60-80%
+
+    - 13分達成率: 85%以上
+
+    - 重症系6分達成率: 直近隊運用と同等
+
+    '
+  device: cuda
+  name: normal_ppo_balanced_v2
+  seed: 2025
+hybrid_mode:
+  enabled: false
+  severity_classification:
+    mild_conditions:
+    - 軽症
+    - 中等症
+    severe_conditions:
+    - 重症
+    - 重篤
+    - 死亡
+inherits: ./config.yaml
+network:
+  actor:
+    activation: relu
+    dropout: 0.2
+    hidden_layers:
+    - 128
+    - 64
+    initialization: xavier_uniform
+  critic:
+    activation: relu
+    dropout: 0.2
+    hidden_layers:
+    - 128
+    - 64
+    init_scale: 0.001
+ppo:
+  batch_size: 512
+  clip_epsilon: 0.1
+  entropy_coef: 0.025
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001
+    scheduler: constant
+  max_grad_norm: 0.5
+  n_episodes: 3000
+  n_epochs: 4
+reward:
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+  unified:
+    coverage_penalty_scale: 20.0
+    coverage_w13: 0.0
+    coverage_w6: 1.0
+    coverage_weight: 0.5
+    critical_lambda: 0.115
+    critical_max_bonus: 50.0
+    critical_penalty_power: 1.5
+    critical_penalty_scale: 8.0
+    mild_max_bonus: 10.0
+    mild_penalty_scale: 1.0
+    time_weight: 0.5
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重症
+      - 重篤
+      - 死亡
+      reward_weight: 1.0
+    mild:
+      conditions:
+      - 軽症
+      - 中等症
+      reward_weight: 1.0
+state_encoding:
+  mode: compact
+  normalization:
+    max_station_distance_km: 10
+    max_travel_time_minutes: 30
+  top_k: 10
+training:
+  checkpoint_interval: 200
+  early_stopping:
+    enabled: true
+    min_delta: 0.001
+    patience: 500
+  keep_last_n: 5
+  logging:
+    interval: 50
+    tensorboard: false
+    wandb: true
+    wandb_project: ems_ppo_normal

@@ -1,0 +1,197 @@
+# config_continuous.yaml
+# 連続報酬関数を使用したPPO学習の設定
+# 重症案件の6分到達率向上に特化
+# ================================================================
+# 実験設定
+# ================================================================
+experiment:
+  name: "ppo_continuous_almighty_v1"
+  seed: 42
+  device: "cuda"  # GPUがない場合は "cpu"
+# -------------------------------------------------------------------
+# 状態空間エンコーディング設定（コンパクトモードを無効化）
+# config.yamlのcompactモード設定を上書きしてfullモードに戻す
+# -------------------------------------------------------------------
+state_encoding:
+  mode: 'full'  # 通常モード（999次元）を使用
+  # top_k設定はfullモードでは無効
+  # normalization設定はfullモードでも使用可能（必要に応じて）
+
+
+# ================================================================
+# データ設定（前年同月比較方式）
+# ================================================================
+data:
+  # 2023年で学習（3つの代表的な時期）
+  train_periods:
+    - start_date: "20230409"
+      end_date: "20230514"
+    - start_date: "20230709"
+      end_date: "20230730"
+    - start_date: "20231119"
+      end_date: "20231217"
+
+  eval_periods:
+    - start_date: "20230917"
+      end_date: "20231015"
+  
+  episode_duration_hours: 24  # 1日単位のエピソード
+
+# ================================================================
+# 傷病度設定（変更なし）
+# ================================================================
+severity:
+  categories:
+    critical:
+      conditions: ["重篤", "重症", "死亡"]
+      reward_weight: 1.0
+      time_limit_seconds: 360  # 6分目標
+      
+    moderate:
+      conditions: ["中等症"]
+      reward_weight: 1.0
+      time_limit_seconds: 780  # 13分目標
+      
+    mild:
+      conditions: ["軽症"]
+      reward_weight: 1.0
+      time_limit_seconds: 780  # 13分目標
+      
+  thresholds:
+    golden_time: 360   # 6分（重症系目標）
+    standard_time: 780 # 13分（全体目標）
+
+# ================================================================
+# PPOハイパーパラメータ（大規模実験用）
+# ================================================================
+ppo:
+  n_episodes: 3000      # デスクトップPCで実行可能な規模
+  n_epochs: 10          # 各データバッチを10回学習
+  batch_size: 1024       # GPU向けのバッチサイズ
+  
+  # PPO基本パラメータ
+  clip_epsilon: 0.15     # 標準的な値
+  gamma: 0.99           # 長期的視点を重視
+  gae_lambda: 0.95      # GAEパラメータ
+  
+  # 学習率設定
+  learning_rate:
+    actor: 0.0003       # Actor学習率
+    critic: 0.001      # Critic学習率
+    scheduler: "cosine" # 学習率スケジューラ
+    
+  # 探索と安定化
+  entropy_coef: 0.015     # 探索を促進（重要）
+  max_grad_norm: 0.5    # 勾配クリッピング
+  value_loss_coeff: 0.5 # 価値関数の損失係数
+  target_kl: 0.02       # KLダイバージェンスの目標値
+
+
+# ================================================================
+# 報酬関数設定（連続報酬）★重要な変更箇所★
+# ================================================================
+reward:
+  # 連続報酬を有効化
+  use_continuous: true  # ← これで連続報酬モードになる
+  
+  # 連続報酬のパラメータ
+  continuous_params:
+    critical:
+      target: 6          # 目標時間（分）
+      max_bonus: 200     # 0分時の最大ボーナス（重症を最重視）
+      penalty_scale: 3.0 # 6分超過時のペナルティスケール
+      
+    moderate:
+      target: 10         # 目標時間（分）
+      max_bonus: 30      # 中等症のボーナス（控えめ）
+      penalty_scale: 5.0 # 13分超過時のペナルティ
+      
+    mild:
+      target: 10         # 目標時間（分）
+      max_bonus: 30      # 軽症のボーナス（最小）
+      penalty_scale: 5.0 # 軽症のペナルティ（緩い）
+  
+  # 従来の設定（連続報酬では使われないが互換性のため残す）
+  weights:
+    response_time: -1.0
+    severity_bonus: 2.0
+    threshold_penalty: -10.0
+    coverage_preservation: 0.5
+    
+  penalties:
+    over_6min: -5.0
+    over_13min: -20.0
+    per_minute_over: -1.0
+
+# ================================================================
+# ネットワーク構造
+# ================================================================
+network:
+  actor:
+    hidden_layers: [256, 128]
+    activation: relu
+    initialization: xavier_uniform
+  critic:
+    hidden_layers: [256, 128]
+    activation: relu
+    init_scale: 0.001
+
+# ================================================================
+# 教師あり学習設定
+# ================================================================
+teacher:
+  enabled: false         # 教師あり学習を使用
+  initial_prob: 1.0     # 初期は50%の確率で教師に従う
+  final_prob: 0.1       # 最終的に10%まで減少
+  decay_episodes: 500  # 1500エピソードかけて減衰
+
+# ================================================================
+# 評価設定
+# ================================================================
+evaluation:
+  interval: 100  # 評価間隔を短く
+  n_eval_episodes: 5
+  eval_deterministic: false  # 確率的な評価
+  
+  # 評価メトリクス（重要な2つに絞る）
+  metrics:
+    - "critical_6min_rate"     # 重症系6分達成率（最重要）
+    - "achieved_13min_rate"    # 全体13分達成率
+    - "mean_response_time"     # 平均応答時間
+    - "critical_mean_time"     # 重症系平均時間
+    
+  # ベースライン手法との比較
+  compare_baselines:
+    - "closest"         # 直近隊運用
+    - "severity_based"  # 重症度ベース
+
+# ================================================================
+# 訓練設定
+# ================================================================
+training:
+  # チェックポイント
+  checkpoint_interval: 100     # 100エピソードごとに保存
+  keep_last_n: 10             # 最新10個のチェックポイントを保持
+  
+  # 早期停止
+  early_stopping:
+    enabled: true
+    patience: 50              # 50エピソード改善なしで停止
+    min_delta: 0.01          # 最小改善幅
+    min_episodes: 1000       # 最低1000エピソードは実行
+    
+  # ログ設定
+  logging:
+    interval: 10             # 10エピソードごとにログ
+    wandb: true              # Weights & Biases使用
+    tensorboard: true        # TensorBoard使用
+    log_level: "INFO"        # ログレベル
+
+# ================================================================
+# 実験管理用の設定（オプション）
+# ================================================================
+metadata:
+  description: "連続報酬で全ての週で実験"
+  date: "2026-01-01"
+  notes: |
+    - fullモードに設定の上実験，

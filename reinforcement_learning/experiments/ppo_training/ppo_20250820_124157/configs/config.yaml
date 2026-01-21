@@ -1,0 +1,104 @@
+data:
+  episode_duration_hours: 24
+  eval_periods:
+  - end_date: '20230507'
+    start_date: '20230501'
+  train_periods:
+  - end_date: '20230430'
+    start_date: '20230401'
+  - end_date: '20231230'
+    start_date: '20231201'
+evaluation:
+  compare_baselines:
+  - closest
+  - severity_based
+  interval: 50
+  metrics:
+  - mean_response_time
+  - response_time_by_severity
+  - 6min_achievement_rate
+  - 13min_achievement_rate
+  - critical_6min_rate
+  n_eval_episodes: 10
+experiment:
+  device: cpu
+  name: ppo_dispatch_optimization
+  seed: 42
+network:
+  actor:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 256
+    - 128
+    - 64
+  critic:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 256
+    - 128
+  state_encoder:
+    ambulance_features: 8
+    incident_features: 6
+    spatial_features: 16
+    temporal_features: 8
+ppo:
+  batch_size: 64
+  clip_epsilon: 0.05
+  entropy_coef: 0.05
+  gae_lambda: 0.95
+  gamma: 0.97
+  learning_rate:
+    actor: 0.0001
+    critic: 0.0002
+    scheduler: cosine
+  n_episodes: 300
+  n_epochs: 5
+reward:
+  bonuses:
+    critical_under_6min: 15
+    under_3min: 10
+    under_6min: 5
+  penalties:
+    over_13min: -15.0
+    over_6min: -3.0
+    per_minute_over: -0.5
+  weights:
+    coverage_preservation: 1.0
+    response_time: -0.7
+    severity_bonus: 3.0
+    threshold_penalty: -7.0
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重篤
+      - 重症
+      - 死亡
+      reward_weight: 5.0
+      time_limit_seconds: 360
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 1.0
+      time_limit_seconds: 780
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 2.0
+      time_limit_seconds: 480
+  thresholds:
+    golden_time: 360
+    standard_time: 780
+training:
+  checkpoint_interval: 100
+  early_stopping:
+    enabled: true
+    min_delta: 0.001
+    patience: 500
+  keep_last_n: 5
+  logging:
+    interval: 10
+    tensorboard: true
+    wandb: true

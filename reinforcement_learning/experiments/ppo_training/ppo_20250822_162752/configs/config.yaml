@@ -1,0 +1,230 @@
+advanced:
+  debug:
+    log_threshold_changes: true
+    save_stage_checkpoints: true
+  experience_prioritization:
+    enabled: true
+    method: td_error
+  gradient_clipping:
+    max_norm: 0.5
+    method: global_norm
+  reward_smoothing:
+    enabled: true
+    window_size: 50
+data:
+  area_restriction:
+    area_name: 第三方面
+    districts:
+    - 目黒区
+    - 渋谷区
+    - 世田谷区
+    enabled: true
+    section_code: 3
+  episode_duration_hours: 4
+  eval_periods:
+  - end_date: '20230409'
+    start_date: '20230408'
+  train_periods:
+  - end_date: '20230407'
+    start_date: '20230401'
+evaluation:
+  compare_baselines:
+  - closest
+  - severity_based
+  eval_deterministic: true
+  interval: 25
+  metrics:
+  - critical_6min_rate
+  - achieved_13min_rate
+  - mean_response_time
+  - area3_specific_rate
+  n_eval_episodes: 5
+  stage_targets:
+    stage_1:
+      all_20min_rate: 0.95
+      critical_10min_rate: 0.8
+    stage_2:
+      all_18min_rate: 0.9
+      critical_8min_rate: 0.7
+    stage_3:
+      all_15min_rate: 0.85
+      critical_7min_rate: 0.6
+    stage_4:
+      all_13min_rate: 0.85
+      critical_6min_rate: 0.4
+experiment:
+  description: 閾値を段階的に厳しくする学習
+  device: cpu
+  name: ppo_area3_threshold_v1
+  seed: 4444
+metadata:
+  description: '閾値段階強化アプローチ
+
+    - Stage 1 (0-300): 10分/15分/20分の緩い基準で基礎学習
+
+    - Stage 2 (300-600): 8分/12分/18分の中間基準
+
+    - Stage 3 (600-900): 7分/10分/15分の標準基準
+
+    - Stage 4 (900-1200): 6分/8分/13分の目標基準
+
+
+    全傷病度を含むが、目標時間を段階的に厳しくすることで
+
+    徐々に難易度を上げていく
+
+    '
+  notes: '- 軽症のみの学習ではなく、全傷病度で閾値を調整
+
+    - 最初は「10分以内に到着」という緩い目標
+
+    - 徐々に「6分以内」という厳しい目標へ
+
+    - 各段階で十分な性能を確保してから次へ
+
+    - 重症系の重みを高く設定（25倍）'
+network:
+  actor:
+    activation: relu
+    dropout: 0.0
+    hidden_layers:
+    - 96
+    - 48
+  critic:
+    activation: relu
+    dropout: 0.0
+    hidden_layers:
+    - 96
+    - 48
+    init_scale: 0.01
+  state_encoder:
+    ambulance_features: 4
+    incident_features: 10
+    spatial_features: 20
+    temporal_features: 8
+ppo:
+  batch_size: 96
+  clip_epsilon: 0.15
+  entropy_coef: 0.02
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 8.0e-05
+    critic: 0.00015
+    scheduler: constant
+  max_grad_norm: 0.5
+  n_episodes: 1200
+  n_epochs: 4
+  target_kl: 0.02
+  value_loss_coeff: 1.0
+reward:
+  base_reward: 80.0
+  continuous_params:
+    critical:
+      max_bonus: 250
+      penalty_scale: 1.5
+      target: 10
+    mild:
+      max_bonus: 25
+      penalty_scale: 0.2
+      target: 20
+    moderate:
+      max_bonus: 80
+      penalty_scale: 0.4
+      target: 15
+  penalties:
+    over_13min: -4.0
+    over_6min: -1.5
+    per_minute_over: -0.08
+  use_continuous: true
+  weights:
+    coverage_preservation: 0.05
+    response_time: -0.15
+    severity_bonus: 12.0
+    threshold_penalty: -1.5
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重篤
+      - 重症
+      - 死亡
+      reward_weight: 25
+      time_limit_seconds: 600
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 2
+      time_limit_seconds: 1200
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 8
+      time_limit_seconds: 900
+  thresholds:
+    golden_time: 600
+    standard_time: 900
+teacher:
+  adaptive_recovery:
+    check_interval: 30
+    enabled: true
+    min_performance: 0.35
+  decay_episodes: 800
+  enabled: true
+  final_prob: 0.35
+  initial_prob: 0.9
+threshold_curriculum:
+  enabled: true
+  stages:
+  - episodes:
+    - 0
+    - 300
+    thresholds:
+      critical_target: 10
+      mild_target: 20
+      moderate_target: 15
+      penalty_scale: 0.3
+  - episodes:
+    - 300
+    - 600
+    thresholds:
+      critical_target: 8
+      mild_target: 18
+      moderate_target: 12
+      penalty_scale: 0.6
+  - episodes:
+    - 600
+    - 900
+    thresholds:
+      critical_target: 7
+      mild_target: 15
+      moderate_target: 10
+      penalty_scale: 0.8
+  - episodes:
+    - 900
+    - 1200
+    thresholds:
+      critical_target: 6
+      mild_target: 13
+      moderate_target: 8
+      penalty_scale: 1.0
+training:
+  checkpoint_interval: 50
+  early_stopping:
+    enabled: true
+    min_delta: 0.002
+    min_episodes: 400
+    patience: 400
+  keep_last_n: 12
+  logging:
+    interval: 5
+    log_level: INFO
+    tensorboard: true
+    threshold_logs:
+    - current_thresholds
+    - stage_number
+    - achievement_rates
+    wandb: true
+  stage_transition:
+    log_transition: true
+    reset_optimizer: false

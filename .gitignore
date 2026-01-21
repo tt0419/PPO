@@ -1,0 +1,49 @@
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# Large data files
+*.csv
+*.npy
+*.pkl
+*.json
+*.zip
+*.png
+*.html
+
+# Data directories
+data/tokyo/*
+Input_Data/
+Output_Data/
+AmbulanceDeployment/data/tokyo/*
+
+# Julia project files
+*.toml
+AmbulanceDeployment.jl-legacy/Manifest.toml
+AmbulanceDeployment.jl-legacy/Project.toml
+AmbulanceDeployment.jl-legacy/test/austin-data/Austin_Data_big/team_stats.jld
+AmbulanceDeployment.jl-legacy/test/austin_data/Austin_Data_big/team_stats.jld
+AmbulanceDeployment.jl-legacy/test/temp_austin_data_3200/Austin_Data_big/team_stats.jld
+
+# IDE files
+.idea/misc.xml
+
+# Shape files
+Data_Preprocessing/Input_Data/xinyu_shape_file/*
+Input_Data/xinyu_shape_file/*
+
+# Specific large files
+Data_Preprocessing/geoid_min_avg_times_2018_v4.csv
+Data_Preprocessing/geoid_for_grid3200.json
+analyze_simulation_results_v7.6.xlsx
+
+# Old project files
+old/
+
+# check point
+checkpoints/
+
+# WandB files (large files that exceed GitHub limits)
+wandb/
+*.wandb
+wandb-*

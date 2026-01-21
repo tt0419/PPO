@@ -1,0 +1,177 @@
+# ================================================================
+# ハイブリッドPPO 本格学習設定 v2
+# バランス調整版 - 検証テスト結果を踏まえた最適化
+# ================================================================
+
+# ベース設定を継承
+inherits: ./config.yaml
+
+# ================================================================
+# 実験設定
+# ================================================================
+experiment:
+  name: "hybrid_ppo_balanced_v2"
+  description: |
+    46次元設計のハイブリッドPPO本格学習（バランス調整版）
+    
+    検証テスト結果（time 10%, coverage 90%）:
+    - 直近隊選択率: 6.9% → PPOは非直近隊を選択可能
+    - 13分達成率: 30.3% → カバレッジ寄りすぎ
+    
+    本設定の調整:
+    - time 50% / coverage 50%（均等バランス）
+    - coverage_penalty_scale: 20.0（中程度）
+    - 目標: 直近隊選択率 60-80%、13分達成率 85%以上
+  seed: 2025
+  device: "cuda"
+
+# ================================================================
+# PPO設定（本格学習用）
+# ================================================================
+ppo:
+  n_episodes: 3000  # 本格学習
+  batch_size: 512
+  n_epochs: 4
+  clip_epsilon: 0.1
+  
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001
+    scheduler: "constant"
+  
+  gamma: 0.99
+  gae_lambda: 0.95
+  
+  # 探索（検証時より控えめ、学習安定性のため）
+  entropy_coef: 0.025
+  
+  max_grad_norm: 0.5
+
+# ================================================================
+# 状態空間（46次元）
+# ================================================================
+state_encoding:
+  mode: 'compact'
+  top_k: 10
+  normalization:
+    max_travel_time_minutes: 30
+    max_station_distance_km: 10
+
+# ================================================================
+# ハイブリッドモード
+# ================================================================
+hybrid_mode:
+  enabled: true
+  severity_classification:
+    severe_conditions: ["重症", "重篤", "死亡"]
+    mild_conditions: ["軽症", "中等症"]
+
+# ================================================================
+# 報酬設定（バランス調整版）
+# ★★★ 検証テスト結果を踏まえた最適化 ★★★
+# ================================================================
+reward:
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+  
+  unified:
+    # 重症系パラメータ（ハイブリッドでは使用しない）
+    critical_max_bonus: 50.0
+    critical_lambda: 0.115
+    critical_penalty_scale: 5.0
+    critical_penalty_power: 1.5
+    
+    # 軽症系パラメータ
+    mild_max_bonus: 10.0
+    mild_penalty_scale: 1.0
+    
+    # ★★★ カバレッジパラメータ（中程度） ★★★
+    coverage_w6: 1.0   # L6のみ使用
+    coverage_w13: 0.0  # L13は常に0なので無効化
+    coverage_penalty_scale: 20.0  # 中程度の強さ
+    
+    # ★★★ 重み配分（均等バランス） ★★★
+    time_weight: 0.5
+    coverage_weight: 0.5
+
+# ================================================================
+# ネットワーク設定
+# ================================================================
+network:
+  actor:
+    hidden_layers: [128, 64]
+    activation: "relu"
+    dropout: 0.2
+  
+  critic:
+    hidden_layers: [128, 64]
+    activation: "relu"
+    dropout: 0.2
+
+# ================================================================
+# 学習管理
+# ================================================================
+training:
+  checkpoint_interval: 200
+  keep_last_n: 5
+  
+  early_stopping:
+    enabled: true
+    patience: 500
+    min_delta: 0.001
+  
+  logging:
+    interval: 50
+    tensorboard: false
+    wandb: true
+    wandb_project: "ems_ppo_hybrid"
+
+# ================================================================
+# 評価設定
+# ================================================================
+evaluation:
+  interval: 100
+  n_eval_episodes: 10
+  compare_baselines: ["closest"]
+  metrics:
+    - "critical_6min_rate"
+    - "achieved_13min_rate"
+    - "mean_response_time"
+    - "non_closest_selection_rate"
+
+# ================================================================
+# データ設定（本格学習用）
+# ================================================================
+data:
+  data_paths:
+    grid_mapping: "data/tokyo/processed/grid_mapping_res9.json"
+    travel_time_matrix: "data/tokyo/calibration2/linear_calibrated_response.npy"
+  
+  episode_duration_hours: 24
+  exclude_daytime_ambulances: true
+  
+  area_restriction:
+    enabled: false
+  
+  # 本格学習期間（1ヶ月）
+  train_periods:
+    - start_date: "20230401"
+      end_date: "20230430"
+  
+  # 評価期間（1週間）
+  eval_periods:
+    - start_date: "20230501"
+      end_date: "20230507"
+
+# ================================================================
+# 傷病度設定
+# ================================================================
+severity:
+  categories:
+    critical:
+      conditions: ["重症", "重篤", "死亡"]
+      reward_weight: 1.0
+    mild:
+      conditions: ["軽症", "中等症"]
+      reward_weight: 1.0

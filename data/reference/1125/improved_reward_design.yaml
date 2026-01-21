@@ -1,0 +1,174 @@
+# ===============================================
+# 改良版報酬設計: 傷病度考慮運用のロジックを組み込む
+# ===============================================
+# 
+# 【基本方針】
+# 1. 重症系: 応答時間のみを重視（直近隊運用と同じ戦略）
+# 2. 軽症系: 応答時間 + カバレッジ損失を考慮
+# 3. カバレッジ損失を明示的に報酬に組み込む
+#
+# ===============================================
+
+reward:
+  core:
+    # ===== 変更箇所1: 重症系と軽症系で異なる報酬ロジック =====
+    mode: coverage_aware  # 新モード
+    
+    # 重症系（重症、重篤、死亡）の報酬
+    severe_params:
+      # 応答時間ベースの報酬（従来通り）
+      time_weight: 1.0  # 100%時間重視
+      coverage_weight: 0.0  # カバレッジは考慮しない
+      
+      # 6分ボーナス・ペナルティ
+      under_6min_bonus: 100.0
+      over_6min_penalty_per_min: -10.0
+      
+      # 目標時間
+      target_time: 6  # 分
+    
+    # 軽症系（軽症、中等症）の報酬
+    mild_params:
+      # 応答時間とカバレッジのバランス
+      time_weight: 0.6  # 60%時間重視
+      coverage_weight: 0.4  # 40%カバレッジ重視
+      
+      # 時間制約
+      time_limit: 13  # 分（この時間内の候補から選択すべき）
+      
+      # ボーナス・ペナルティ
+      under_13min_bonus: 30.0
+      over_13min_penalty_per_min: -3.0
+      over_20min_penalty: -50.0
+      
+      # カバレッジ損失のペナルティ
+      coverage_loss_penalty_scale: -100.0  # カバレッジ損失 × このスケール
+      
+      # カバレッジ損失の計算方法
+      coverage_evaluation:
+        # 6分カバレッジと13分カバレッジの重み
+        coverage_6min_weight: 0.5
+        coverage_13min_weight: 0.5
+        
+        # カバレッジ計算用のサンプルポイント数
+        sample_points: 20
+        
+        # サンプル範囲（H3リング数）
+        sample_radius: 2
+    
+    # ===== 変更箇所2: 報酬計算式 =====
+    # 
+    # 重症系:
+    #   reward = -RT × time_weight + bonus_or_penalty
+    # 
+    # 軽症系:
+    #   time_component = -RT × time_weight
+    #   coverage_component = -coverage_loss × coverage_weight × scale
+    #   reward = time_component + coverage_component + bonus_or_penalty
+    # 
+    # coverage_loss の計算:
+    #   1. 選択した救急車を除いた残りの救急車リストを作成
+    #   2. 救急車の周辺グリッド（H3 ring 2以内）をサンプリング
+    #   3. 各サンプルポイントで:
+    #      - 現在の6分・13分カバレッジ率を計算
+    #      - 選択後の6分・13分カバレッジ率を計算
+    #      - 損失 = (現在 - 選択後) の率
+    #   4. 6分損失 × 0.5 + 13分損失 × 0.5
+    #   5. 0-1の範囲にクリップ
+    
+    # ===== 変更箇所3: アクションマスクの強化 =====
+    action_mask:
+      enabled: true
+      
+      # 軽症系の場合、time_limit以上かかる救急車をマスク
+      mild_time_limit_mask: true
+      mild_time_limit: 780  # 秒（13分）
+      
+      # カバレッジ損失が大きすぎる選択肢をマスク
+      coverage_loss_mask: true
+      coverage_loss_threshold: 0.8  # 損失が80%以上の選択肢をマスク
+
+# ===== 提案2: 状態表現の拡張 =====
+# カバレッジ情報を状態に明示的に追加
+state_representation:
+  # 既存の状態
+  - ambulance_availability  # 利用可能な救急車の情報
+  - request_info  # 要請情報（位置、傷病度）
+  - time_info  # 時刻情報
+  
+  # 新規追加
+  - coverage_score:  # 現在のカバレッジスコア
+      include_6min_coverage: true  # 6分カバレッジ率
+      include_13min_coverage: true  # 13分カバレッジ率
+      sample_method: "grid_based"  # グリッドベースのサンプリング
+      update_frequency: "every_step"  # 毎ステップ更新
+  
+  - ambulance_coverage_impact:  # 各救急車のカバレッジへの影響度
+      include: true
+      calculation_method: "precomputed"  # 事前計算（高速化）
+
+# ===== 提案3: ネットワークアーキテクチャの調整 =====
+network:
+  actor:
+    hidden_layers: [512, 256, 128]  # より大きなネットワーク
+    activation: relu
+    dropout: 0.1
+    
+    # Attention機構の追加（オプション）
+    attention:
+      enabled: true  # 救急車間の相互作用を学習
+      num_heads: 4
+      
+  critic:
+    hidden_layers: [512, 256, 128]
+    activation: relu
+    dropout: 0.1
+
+# ===== 提案4: PPOハイパーパラメータの調整 =====
+ppo:
+  batch_size: 2048  # より大きなバッチ
+  n_epochs: 15  # より多くの更新
+  learning_rate:
+    actor: 0.0001  # より小さな学習率（安定化）
+    critic: 0.0005
+    scheduler: cosine_annealing  # スケジューラ
+  
+  entropy_coef: 0.02  # より大きなエントロピー（探索促進）
+  clip_epsilon: 0.2
+  
+  n_episodes: 5000  # より長い学習
+
+# ===== 提案5: カリキュラム学習 =====
+curriculum:
+  enabled: true
+  
+  stages:
+    # Stage 1: 応答時間のみを学習（1000エピソード）
+    - name: "time_only"
+      episodes: [0, 1000]
+      severe_params:
+        time_weight: 1.0
+        coverage_weight: 0.0
+      mild_params:
+        time_weight: 1.0
+        coverage_weight: 0.0
+    
+    # Stage 2: カバレッジを少しずつ導入（1000-3000エピソード）
+    - name: "introduce_coverage"
+      episodes: [1000, 3000]
+      severe_params:
+        time_weight: 1.0
+        coverage_weight: 0.0
+      mild_params:
+        time_weight: 0.8
+        coverage_weight: 0.2
+    
+    # Stage 3: 最終的なバランス（3000-5000エピソード）
+    - name: "final_balance"
+      episodes: [3000, 5000]
+      severe_params:
+        time_weight: 1.0
+        coverage_weight: 0.0
+      mild_params:
+        time_weight: 0.6
+        coverage_weight: 0.4

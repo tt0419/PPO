@@ -1,0 +1,309 @@
+curriculum:
+  enabled: false
+  stages:
+  - episodes:
+    - 0
+    - 1000
+    mild_params:
+      coverage_weight: 0.0
+      time_weight: 1.0
+    name: time_only
+    reward_mode: time_only
+    severe_params:
+      coverage_weight: 0.0
+      time_weight: 1.0
+  - episodes:
+    - 1000
+    - 3000
+    mild_params:
+      coverage_weight: 0.2
+      time_weight: 0.8
+    name: introduce_coverage
+    reward_mode: coverage_aware
+    severe_params:
+      coverage_weight: 0.0
+      time_weight: 1.0
+  - episodes:
+    - 3000
+    - 5000
+    mild_params:
+      coverage_weight: 0.4
+      time_weight: 0.6
+    name: final_balance
+    reward_mode: coverage_aware
+    severe_params:
+      coverage_weight: 0.0
+      time_weight: 1.0
+data:
+  area_restriction:
+    action_dim: 192
+    area_name: 東京23区
+    districts:
+    - 千代田区
+    - 中央区
+    - 港区
+    - 新宿区
+    - 文京区
+    - 台東区
+    - 墨田区
+    - 江東区
+    - 品川区
+    - 目黒区
+    - 大田区
+    - 世田谷区
+    - 渋谷区
+    - 中野区
+    - 杉並区
+    - 豊島区
+    - 北区
+    - 荒川区
+    - 板橋区
+    - 練馬区
+    - 足立区
+    - 葛飾区
+    - 江戸川区
+    enabled: true
+    num_ambulances_in_area: 192
+    section_code: null
+    state_dim: 999
+  data_paths:
+    grid_mapping: data/tokyo/processed/grid_mapping_res9.json
+    travel_time_matrix: data/tokyo/calibration2/linear_calibrated_response.npy
+  episode_duration_hours: 24
+  eval_periods:
+  - end_date: '20241228'
+    start_date: '20241222'
+  exclude_daytime_ambulances: true
+  max_steps_per_episode: 5000
+  train_periods:
+  - end_date: '20231230'
+    start_date: '20231224'
+evaluation:
+  compare_baselines:
+  - closest
+  - severity_based
+  interval: 100
+  metrics:
+  - severe_6min_rate
+  - severe_mean_rt
+  - critical_6min_rate
+  - mild_13min_rate
+  - mild_20min_rate
+  - mild_mean_rt
+  - overall_13min_rate
+  - overall_mean_rt
+  - coverage_score
+  - workload_balance
+  - vs_closest_improvement
+  - dispatch_ratio
+  n_eval_episodes: 5
+experiment:
+  description: カバレッジ考慮型報酬設計（傷病度考慮運用のロジックを組み込む）
+  device: cuda
+  name: hybrid_continuous_ppo_coverage_aware_v1
+  seed: 2025
+hybrid_mode:
+  coverage_evaluation:
+    high_risk_weight: 0.85
+    min_acceptable: 0.6
+    normal_weight: 0.15
+  enabled: true
+  penalties:
+    over_warning: -50.0
+    per_minute_over: -2.0
+  reward_weights:
+    coverage: 0.2
+    response_time: 0.7
+    workload_balance: 0.1
+  severity_classification:
+    mild_conditions:
+    - 軽症
+    - 中等症
+    severe_conditions:
+    - 重症
+    - 重篤
+    - 死亡
+  time_thresholds:
+    good: 13
+    warning: 20
+inherits: ./config.yaml
+network:
+  actor:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 512
+    - 256
+    - 128
+    initialization: xavier_uniform
+  critic:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 512
+    - 256
+    - 128
+    init_scale: 0.001
+ppo:
+  batch_size: 2048
+  clip_epsilon: 0.2
+  entropy_coef: 0.02
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 0.003
+    critic: 0.001
+    scheduler: cosine_annealing
+  max_grad_norm: 0.5
+  n_episodes: 3000
+  n_epochs: 15
+reward:
+  core:
+    action_mask:
+      coverage_loss_mask: true
+      coverage_loss_threshold: 0.8
+      enabled: true
+      mild_time_limit_mask: true
+    continuous_params:
+      critical:
+        max_bonus: 100.0
+        penalty_scale: 10.0
+        target: 6
+        weight: 3.0
+      mild:
+        max_bonus: 10.0
+        penalty_scale: 0.5
+        target: 13
+        weight: 0.5
+      moderate:
+        max_bonus: 30.0
+        penalty_scale: 3.0
+        target: 13
+        weight: 1.5
+    coverage_impact_weight: 0.4
+    discrete_params:
+      penalties:
+        over_13min: -15.0
+        over_6min: -10.0
+        per_minute_over: -2.0
+      weights:
+        coverage_preservation: 0.5
+        response_time: 2.0
+        severity_bonus: 3.0
+    hybrid_params:
+      balanced_workload_bonus: 2.0
+      coverage_maintenance_bonus: 5.0
+      good_coverage_bonus: 10.0
+      mild_under_13min_bonus: 10.0
+      moderate_under_13min_bonus: 30.0
+      over_13min_penalty: -15.0
+      over_20min_penalty: -50.0
+      overloaded_penalty: -5.0
+      poor_coverage_penalty: -10.0
+      time_penalty_per_minute: -0.3
+    mild_params:
+      coverage_13min_weight: 0.5
+      coverage_6min_weight: 0.5
+      coverage_loss_penalty_scale: -100.0
+      coverage_weight: 0.4
+      mild_severity_weight: 0.5
+      mild_under_13min_bonus: 10.0
+      moderate_severity_weight: 1.5
+      moderate_under_13min_bonus: 30.0
+      over_13min_penalty_per_min: -3.0
+      over_20min_penalty: -50.0
+      sample_points: 20
+      sample_radius: 2
+      time_limit: 13
+      time_limit_seconds: 780
+      time_weight: 0.6
+    mode: coverage_aware
+    severe_params:
+      coverage_weight: 0.0
+      over_6min_penalty_per_min: -10.0
+      target_time: 6
+      time_weight: 3.0
+      under_6min_bonus: 100.0
+    simple_params:
+      critical_under_6min_bonus: 30.0
+      imitation_bonus: 0.0
+      mild_under_13min_bonus: 5.0
+      moderate_under_13min_bonus: 10.0
+      over_13min_penalty: -5.0
+      over_20min_penalty: -20.0
+      time_penalty_per_minute: -0.5
+  coverage_params:
+    drop_penalty_threshold: 0.05
+    drop_penalty_weight: -20.0
+    evaluation_interval: 100
+    time_threshold_seconds: 360
+  episode:
+    achievement_bonuses:
+      critical_6min_rate: 100.0
+      mild_13min_rate: 30.0
+      mild_20min_rate: 20.0
+      rate_13min: 10.0
+      rate_6min: 20.0
+      severe_6min_rate: 150.0
+    base_penalty_per_minute: -0.3
+    failure_penalty_per_incident: -1.0
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+    unhandled_call_penalty: -1.0
+reward_mode:
+  mode: coverage_aware
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重症
+      - 重篤
+      - 死亡
+      reward_weight: 3.0
+      time_limit_seconds: 360
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 0.5
+      time_limit_seconds: 780
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 1.5
+      time_limit_seconds: 780
+  thresholds:
+    golden_time: 360
+    standard_time: 780
+teacher:
+  apply_to:
+  - 軽症
+  - 中等症
+  decay_episodes: 2000
+  enabled: false
+  final_prob: 0.0
+  initial_prob: 0.0
+  strategy: closest
+training:
+  checkpoint_interval: 250
+  early_stopping:
+    enabled: true
+    metric: severe_6min_rate
+    min_delta: 0.005
+    mode: max
+    patience: 300
+  keep_last_n: 5
+  logging:
+    hybrid_logs:
+    - severe_dispatch_count
+    - mild_dispatch_count
+    - coverage_history
+    - warning_episodes
+    - continuous_reward_components
+    - coverage_loss
+    - coverage_6min_rate
+    - coverage_13min_rate
+    interval: 10
+    tensorboard: true
+    wandb: true
+    wandb_project: ems_coverage_aware_tokyo23

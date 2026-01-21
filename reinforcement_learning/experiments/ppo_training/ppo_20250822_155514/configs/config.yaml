@@ -1,0 +1,183 @@
+advanced:
+  debug:
+    check_nan_inf: true
+    log_action_distribution: true
+    log_reward_components: true
+    save_failed_episodes: true
+  gradient_clipping:
+    max_norm: 0.5
+    method: global_norm
+  reward_normalization:
+    enabled: true
+    method: running_mean
+    window_size: 100
+  warmup:
+    enabled: true
+    episodes: 100
+    learning_rate_scale: 0.1
+data:
+  area_restriction:
+    area_name: 第三方面
+    districts:
+    - 目黒区
+    - 渋谷区
+    - 世田谷区
+    enabled: true
+    section_code: 3
+  episode_duration_hours: 4
+  eval_periods:
+  - end_date: '20230409'
+    start_date: '20230408'
+  train_periods:
+  - end_date: '20230407'
+    start_date: '20230401'
+evaluation:
+  compare_baselines:
+  - closest
+  - severity_based
+  eval_deterministic: true
+  interval: 20
+  metrics:
+  - critical_6min_rate
+  - achieved_13min_rate
+  - mean_response_time
+  - area3_specific_rate
+  n_eval_episodes: 5
+experiment:
+  description: 第3方面限定・報酬設計改善・学習安定化版
+  device: cpu
+  name: ppo_area3_improved_v2
+  seed: 2024
+metadata:
+  description: '第3方面限定PPO学習 - 改善版v2
+
+    主な変更点：
+
+    1. 基本報酬を50に増加（常に正の報酬）
+
+    2. 学習率を1/5～1/6に削減（安定性向上）
+
+    3. 教師あり学習を95%開始、50%維持（基礎性能確保）
+
+    4. エピソードを4時間に短縮（学習機会倍増）
+
+    5. ネットワークを簡素化（過学習防止）
+
+    6. 報酬正規化とWarm-up期間追加
+
+    '
+  notes: '- 前回の問題点：報酬が常に負、Critic損失異常
+
+    - 対策：正の基本報酬、学習率削減、教師強化
+
+    - 期待：6分達成率20%以上、安定した学習曲線
+
+    - 注意：4時間エピソードで事案数は30-40件程度'
+network:
+  actor:
+    activation: tanh
+    dropout: 0.0
+    hidden_layers:
+    - 64
+    - 32
+  critic:
+    activation: tanh
+    dropout: 0.0
+    hidden_layers:
+    - 64
+    - 32
+    init_scale: 0.01
+  state_encoder:
+    ambulance_features: 4
+    incident_features: 10
+    spatial_features: 20
+    temporal_features: 8
+ppo:
+  batch_size: 128
+  clip_epsilon: 0.1
+  entropy_coef: 0.01
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 5.0e-05
+    critic: 0.0001
+    scheduler: linear
+  max_grad_norm: 0.5
+  n_episodes: 1000
+  n_epochs: 3
+  target_kl: 0.01
+  value_loss_coeff: 1.0
+reward:
+  base_reward: 50.0
+  continuous_params:
+    critical:
+      max_bonus: 200
+      penalty_scale: 2
+      target: 6
+    mild:
+      max_bonus: 10
+      penalty_scale: 0.1
+      target: 15
+    moderate:
+      max_bonus: 50
+      penalty_scale: 0.5
+      target: 10
+  penalties:
+    over_13min: -5.0
+    over_6min: -2.0
+    per_minute_over: -0.1
+  use_continuous: true
+  weights:
+    coverage_preservation: 0.1
+    response_time: -0.2
+    severity_bonus: 10.0
+    threshold_penalty: -2.0
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重篤
+      - 重症
+      - 死亡
+      reward_weight: 20
+      time_limit_seconds: 480
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 1
+      time_limit_seconds: 1200
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 5
+      time_limit_seconds: 900
+  thresholds:
+    golden_time: 480
+    standard_time: 900
+teacher:
+  adaptive_recovery:
+    check_interval: 25
+    enabled: true
+    min_performance: 0.3
+  decay_episodes: 500
+  enabled: true
+  final_prob: 0.5
+  initial_prob: 0.95
+training:
+  checkpoint_interval: 50
+  early_stopping:
+    enabled: true
+    min_delta: 0.001
+    min_episodes: 300
+    patience: 500
+  keep_last_n: 10
+  logging:
+    area3_specific_logs:
+    - district_breakdown
+    - ambulance_utilization
+    - teacher_action_comparison
+    - reward_breakdown
+    interval: 5
+    log_level: INFO
+    tensorboard: true
+    wandb: true

@@ -1,0 +1,329 @@
+# ============================================================================
+# 軽症カバレッジ特化モデル - 重症即応性を高める配車戦略
+# ============================================================================
+# 
+# 【根本的な設計変更】
+# 
+# 従来の問題:
+#   - 軽症系でも応答時間最小化を目指していた
+#   - 結果として直近隊と同じ配車になっていた
+#   - PPOを使う意味がなかった
+#
+# 新しい設計思想:
+#   - 重症系: 直近隊で最速対応（従来通り）
+#   - 軽症系: カバレッジ維持を最優先、応答時間は13分以内ならOK
+#   - 目標: 軽症対応後も重症事案に即応できる体制を維持
+#
+# 期待される効果:
+#   - 重症系の応答時間: 傷病度考慮と同等以上
+#   - 軽症系の配車: 直近隊ではなくカバレッジ考慮の選択
+#   - 全体のカバレッジ: 維持または向上
+#
+# ============================================================================
+
+curriculum:
+  enabled: false
+  stages: []
+
+data:
+  area_restriction:
+    action_dim: 192
+    area_name: 東京23区
+    districts:
+    - 千代田区
+    - 中央区
+    - 港区
+    - 新宿区
+    - 文京区
+    - 台東区
+    - 墨田区
+    - 江東区
+    - 品川区
+    - 目黒区
+    - 大田区
+    - 世田谷区
+    - 渋谷区
+    - 中野区
+    - 杉並区
+    - 豊島区
+    - 北区
+    - 荒川区
+    - 板橋区
+    - 練馬区
+    - 足立区
+    - 葛飾区
+    - 江戸川区
+    enabled: true
+    num_ambulances_in_area: 192
+    section_code: null
+    state_dim: 999
+  data_paths:
+    grid_mapping: data/tokyo/processed/grid_mapping_res9.json
+    travel_time_matrix: data/tokyo/calibration2/linear_calibrated_response.npy
+  episode_duration_hours: 24
+  
+  eval_periods:
+  - end_date: '20231015'
+    start_date: '20230917'
+  
+  exclude_daytime_ambulances: true
+  max_steps_per_episode: 5000
+  
+  # 全季節をバランスよく
+  train_periods:
+  - end_date: '20230204'
+    start_date: '20230115'
+  - end_date: '20230514'
+    start_date: '20230409'
+  - end_date: '20230813'
+    start_date: '20230702'
+  - end_date: '20231105'
+    start_date: '20231008'
+
+data_paths:
+  grid_mapping: data/tokyo/processed/grid_mapping_res9.json
+  travel_time_matrix: data/tokyo/calibration2/linear_calibrated_response.npy
+
+evaluation:
+  compare_baselines:
+  - closest
+  - severity_based
+  interval: 100
+  metrics:
+  - severe_6min_rate
+  - severe_mean_rt
+  - mild_13min_rate
+  - mild_mean_rt
+  - overall_13min_rate
+  - overall_mean_rt
+  - coverage_score
+  - closest_agreement_rate
+  - dispatch_distribution
+  n_eval_episodes: 5
+
+experiment:
+  description: 軽症カバレッジ特化 - 重症即応性を高める配車戦略
+  device: cuda
+  name: mild_coverage_priority_v1
+  seed: 2025
+
+hybrid_mode:
+  coverage_evaluation:
+    high_risk_weight: 0.8      # 高リスクエリアを重視
+    min_acceptable: 0.6
+    normal_weight: 0.2
+  enabled: true
+  penalties:
+    over_warning: -30.0
+    per_minute_over: -1.0
+  reward_weights:
+    coverage: 0.7              # ★カバレッジを重視
+    response_time: 0.2         # ★応答時間は控えめ
+    workload_balance: 0.1
+  severity_classification:
+    mild_conditions:
+    - 軽症
+    - 中等症
+    severe_conditions:
+    - 重症
+    - 重篤
+    - 死亡
+  time_thresholds:
+    good: 13
+    warning: 20
+
+inherits: ./config.yaml
+
+network:
+  actor:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 512
+    - 256
+    - 128
+    initialization: xavier_uniform
+  critic:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 512
+    - 256
+    - 128
+    init_scale: 0.001
+
+ppo:
+  batch_size: 1024
+  clip_epsilon: 0.15
+  entropy_coef: 0.03          # ★やや高め（探索促進）
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001
+    scheduler: constant
+  max_grad_norm: 0.5
+  n_episodes: 4000
+  n_epochs: 10
+
+reward:
+  core:
+    # ★★★ 報酬設計の核心 ★★★
+    # 
+    # 重症系（重症・重篤・死亡）:
+    #   - 直近隊運用（ハイブリッドモードで強制）
+    #   - 報酬は学習対象外（reward = 0）
+    #
+    # 軽症系（軽症・中等症）:
+    #   - カバレッジ維持を最優先
+    #   - 応答時間は13分以内ならほぼ同じ報酬
+    #   - 直近隊と異なる選択にボーナス
+    #
+    continuous_params:
+      critical:
+        max_bonus: 100.0
+        penalty_scale: 10.0
+        target: 6
+        weight: 1.0
+      mild:
+        max_bonus: 20.0       # 13分達成ボーナス
+        penalty_scale: 0.3    # ★応答時間ペナルティを大幅削減
+        target: 13
+        weight: 0.3           # ★重みを削減
+      moderate:
+        max_bonus: 30.0
+        penalty_scale: 0.5
+        target: 13
+        weight: 0.5
+    coverage_impact_weight: 0.7  # ★カバレッジ重視
+    discrete_params:
+      penalties:
+        over_13min: -30.0
+        over_6min: -50.0
+        per_minute_over: -0.5
+      weights:
+        coverage_preservation: 3.0   # ★強化
+        response_time: 0.5           # ★削減
+        severity_bonus: 2.0
+    hybrid_params:
+      balanced_workload_bonus: 10.0
+      coverage_maintenance_bonus: 150.0   # ★強化
+      good_coverage_bonus: 200.0          # ★強化
+      mild_under_13min_bonus: 30.0        # 控えめ
+      moderate_under_13min_bonus: 50.0    # 控えめ
+      over_13min_penalty: -50.0
+      over_20min_penalty: -150.0
+      overloaded_penalty: -20.0
+      poor_coverage_penalty: -150.0       # ★強化
+      time_penalty_per_minute: -0.5
+      # ★★★ 軽症カバレッジ特化の追加報酬 ★★★
+      mild_coverage_preservation_bonus: 100.0  # 軽症でカバレッジ維持
+      high_risk_area_coverage_bonus: 80.0      # 高リスクエリアのカバー維持
+      severe_readiness_bonus: 60.0             # 重症即応性維持
+    mode: hybrid
+    simple_params:
+      critical_under_6min_bonus: 50.0
+      imitation_bonus: 0.0
+      mild_under_13min_bonus: 10.0
+      moderate_under_13min_bonus: 20.0
+      over_13min_penalty: -10.0
+      over_20min_penalty: -40.0
+      time_penalty_per_minute: -0.3
+  coverage_params:
+    drop_penalty_threshold: 0.05
+    drop_penalty_weight: -80.0    # ★強化
+    evaluation_interval: 100
+    time_threshold_seconds: 360
+  episode:
+    achievement_bonuses:
+      critical_6min_rate: 100.0
+      mild_13min_rate: 30.0
+      mild_20min_rate: 20.0
+      rate_13min: 15.0
+      rate_6min: 30.0
+      severe_6min_rate: 80.0
+      coverage_maintained: 50.0   # ★追加
+    base_penalty_per_minute: -0.3
+    failure_penalty_per_incident: -1.5
+  system:
+    dispatch_failure: -1.5
+    no_available_ambulance: 0.0
+    unhandled_call_penalty: -1.5
+
+reward_mode:
+  mode: hybrid
+
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重症
+      - 重篤
+      - 死亡
+      reward_weight: 2.0
+      time_limit_seconds: 360
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 0.5     # ★削減（カバレッジ報酬とのバランス）
+      time_limit_seconds: 780
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 0.7
+      time_limit_seconds: 780
+  thresholds:
+    golden_time: 360
+    standard_time: 780
+
+state_encoding:
+  mode: compact
+  normalization:
+    max_station_distance_km: 10
+    max_travel_time_minutes: 30
+  top_k: 20
+  # カバレッジ情報を状態に含める
+  include_coverage_features: true
+  coverage_feature_dim: 15
+
+teacher:
+  apply_to:
+  - 軽症
+  - 中等症
+  decay_episodes: 1000
+  enabled: false      # 教師あり学習を無効化
+  final_prob: 0.0
+  initial_prob: 0.0
+  strategy: closest
+
+training:
+  checkpoint_interval: 200
+  early_stopping:
+    enabled: true
+    metric: coverage_score
+    min_delta: 0.01
+    mode: max
+    patience: 400
+  keep_last_n: 5
+  logging:
+    hybrid_logs:
+    - severe_dispatch_count
+    - mild_dispatch_count
+    - coverage_history
+    - closest_agreement_rate
+    - action_entropy
+    - coverage_reward_component
+    interval: 10
+    tensorboard: true
+    wandb: true
+    wandb_project: ems_mild_coverage_priority
+
+# ★★★ 軽症カバレッジ特化の追加設定 ★★★
+mild_coverage_config:
+  enabled: true
+  # 軽症系の報酬計算で使用
+  response_time_threshold: 13.0  # この時間以内なら応答時間報酬の差を小さく
+  response_time_weight_below_threshold: 0.1  # 閾値以内の重み
+  response_time_weight_above_threshold: 1.0  # 閾値超過の重み
+  coverage_weight: 2.0
+  high_risk_area_weight: 1.5

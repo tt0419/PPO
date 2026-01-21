@@ -1,0 +1,303 @@
+_wandb:
+    value:
+        cli_version: 0.21.1
+        e:
+            xwvkpqkkpljyfxtti312q91jsbvga774:
+                args:
+                    - --experiment
+                    - config_continuous.yaml
+                codePath: train_ppo.py
+                codePathLocal: train_ppo.py
+                cpu_count: 20
+                cpu_count_logical: 28
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "2047313178624"
+                        used: "1010206679040"
+                email: y245611c@yokohama-cu.ac.jp
+                executable: C:\Users\hp\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe
+                git:
+                    commit: 5ae838dda6aeb4cc7cb023602d3aa48f3ad6efd8
+                    remote: https://github.com/tt0419/05_Ambulance_RL.git
+                gpu: NVIDIA GeForce RTX 4070 Ti SUPER
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 8448
+                      memoryTotal: "17171480576"
+                      name: NVIDIA GeForce RTX 4070 Ti SUPER
+                      uuid: GPU-344bd11a-5d20-40ba-e612-13a446633f32
+                host: TETOMEN
+                memory:
+                    total: "68454293504"
+                os: Windows-11-10.0.26200-SP0
+                program: C:\Users\hp\OneDrive - Yokohama City University\32_vscode\05_Ambulance_RL\train_ppo.py
+                python: CPython 3.13.9
+                root: C:\Users\hp\OneDrive - Yokohama City University\32_vscode\05_Ambulance_RL
+                startedAt: "2025-10-26T00:33:37.084909Z"
+                writerId: xwvkpqkkpljyfxtti312q91jsbvga774
+        m: []
+        python_version: 3.13.9
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 2
+                - 13
+                - 15
+                - 16
+                - 24
+            "4": 3.13.9
+            "5": 0.21.1
+            "8":
+                - 3
+            "12": 0.21.1
+            "13": windows-amd64
+curriculum:
+    value:
+        enabled: false
+        stages: []
+data:
+    value:
+        area_restriction:
+            area_name: default
+            districts: []
+            enabled: false
+            num_ambulances_in_area: 192
+        data_paths:
+            grid_mapping: data/tokyo/processed/grid_mapping_res9.json
+            travel_time_matrix: data/tokyo/calibration2/linear_calibrated_response.npy
+        episode_duration_hours: 24
+        eval_periods:
+            - end_date: "20240831"
+              start_date: "20240701"
+        exclude_daytime_ambulances: true
+        train_periods:
+            - end_date: "20230831"
+              start_date: "20230701"
+            - end_date: "20240130"
+              start_date: "20231201"
+evaluation:
+    value:
+        compare_baselines:
+            - closest
+            - severity_based
+        eval_deterministic: false
+        interval: 100
+        metrics:
+            - critical_6min_rate
+            - achieved_13min_rate
+            - mean_response_time
+            - critical_mean_time
+        n_eval_episodes: 5
+experiment:
+    value:
+        description: 救急車配車最適化
+        device: cuda
+        name: ppo_continuous_reward_oneday_v1
+        seed: 42
+hybrid_mode:
+    value:
+        coverage_evaluation:
+            high_risk_weight: 0.7
+            min_acceptable: 0.6
+            normal_weight: 0.3
+        enabled: false
+        penalties:
+            over_warning: -50
+            per_minute_over: -2
+        reward_weights:
+            coverage: 0.5
+            response_time: 0.4
+            workload_balance: 0.1
+        severity_classification:
+            mild_conditions:
+                - 軽症
+                - 中等症
+            severe_conditions:
+                - 重症
+                - 重篤
+                - 死亡
+        time_thresholds:
+            good: 13
+            warning: 20
+metadata:
+    value:
+        author: 研究者名
+        date: "2025-01-20"
+        description: 連続報酬関数による重症案件RT短縮実験
+        notes: |-
+            - 重症の6分到達率向上を最優先
+            - 軽症・中等症のRTは許容範囲内で犠牲可
+            - 連続報酬により滑らかな学習を期待
+network:
+    value:
+        actor:
+            activation: relu
+            dropout: 0.1
+            hidden_layers:
+                - 256
+                - 128
+            initialization: xavier_uniform
+        critic:
+            activation: relu
+            dropout: 0.1
+            hidden_layers:
+                - 256
+                - 128
+            init_scale: 0.001
+        state_encoder:
+            ambulance_features: 8
+            incident_features: 6
+            spatial_features: 16
+            temporal_features: 8
+ppo:
+    value:
+        batch_size: 1024
+        clip_epsilon: 0.2
+        entropy_coef: 0.1
+        gae_lambda: 0.95
+        gamma: 0.99
+        learning_rate:
+            actor: 0.0003
+            critic: 0.001
+            scheduler: cosine
+        max_grad_norm: 0.5
+        n_episodes: 5000
+        n_epochs: 6
+        target_kl: 0.02
+        value_loss_coeff: 0.5
+reward:
+    value:
+        continuous_params:
+            critical:
+                max_bonus: 100
+                penalty_scale: 3
+                target: 6
+            mild:
+                max_bonus: 10
+                penalty_scale: 3
+                target: 10
+            moderate:
+                max_bonus: 30
+                penalty_scale: 5
+                target: 10
+        core:
+            continuous_params:
+                critical:
+                    max_bonus: 50
+                    penalty_scale: 5
+                    target: 6
+                    weight: 5
+                mild:
+                    max_bonus: 10
+                    penalty_scale: 0.5
+                    target: 13
+                    weight: 1
+                moderate:
+                    max_bonus: 20
+                    penalty_scale: 2
+                    target: 13
+                    weight: 2
+            coverage_impact_weight: 0
+            discrete_params:
+                penalties:
+                    over_6min: -10
+                    over_13min: -15
+                    per_minute_over: -2
+                weights:
+                    coverage_preservation: 0.5
+                    response_time: 2
+                    severity_bonus: 3
+            hybrid_params:
+                balanced_workload_bonus: 2
+                coverage_maintenance_bonus: 5
+                good_coverage_bonus: 10
+                mild_under_13min_bonus: 5
+                moderate_under_13min_bonus: 10
+                over_13min_penalty: -5
+                over_20min_penalty: -50
+                overloaded_penalty: -5
+                poor_coverage_penalty: -10
+                time_penalty_per_minute: -0.3
+            mode: simple
+            simple_params:
+                critical_under_6min_bonus: 30
+                imitation_bonus: 0
+                mild_under_13min_bonus: 5
+                moderate_under_13min_bonus: 10
+                over_13min_penalty: -5
+                over_20min_penalty: -20
+                time_penalty_per_minute: -0.5
+        coverage_params:
+            drop_penalty_threshold: 0.05
+            drop_penalty_weight: -20
+            time_threshold_seconds: 600
+        episode:
+            achievement_bonuses:
+                critical_6min_rate: 30
+                rate_6min: 20
+                rate_13min: 10
+            base_penalty_per_minute: -0.5
+            failure_penalty_per_incident: -1
+        penalties:
+            over_6min: -5
+            over_13min: -20
+            per_minute_over: -1
+        system:
+            dispatch_failure: -1
+            no_available_ambulance: 0
+            unhandled_call_penalty: -1
+        use_continuous: true
+        weights:
+            coverage_preservation: 0.5
+            response_time: -1
+            severity_bonus: 2
+            threshold_penalty: -10
+severity:
+    value:
+        categories:
+            critical:
+                conditions:
+                    - 重篤
+                    - 重症
+                    - 死亡
+                reward_weight: 1
+                time_limit_seconds: 360
+            mild:
+                conditions:
+                    - 軽症
+                reward_weight: 1
+                time_limit_seconds: 600
+            moderate:
+                conditions:
+                    - 中等症
+                reward_weight: 1
+                time_limit_seconds: 600
+        thresholds:
+            golden_time: 360
+            standard_time: 600
+teacher:
+    value:
+        decay_episodes: 1500
+        enabled: false
+        final_prob: 0.1
+        initial_prob: 0.5
+        strategy: closest
+training:
+    value:
+        checkpoint_interval: 100
+        early_stopping:
+            enabled: true
+            min_delta: 0.01
+            min_episodes: 1000
+            patience: 500
+        keep_last_n: 10
+        logging:
+            interval: 10
+            log_level: INFO
+            tensorboard: true
+            wandb: true

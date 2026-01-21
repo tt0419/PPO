@@ -1,0 +1,126 @@
+data:
+  episode_duration_hours: 24
+  eval_periods:
+  - end_date: '20240407'
+    start_date: '20240401'
+  - end_date: '20240807'
+    start_date: '20240801'
+  - end_date: '20241207'
+    start_date: '20241201'
+  train_periods:
+  - end_date: '20230430'
+    start_date: '20230401'
+  - end_date: '20230831'
+    start_date: '20230801'
+  - end_date: '20231231'
+    start_date: '20231201'
+evaluation:
+  compare_baselines:
+  - closest
+  - severity_based
+  eval_deterministic: false
+  interval: 50
+  metrics:
+  - critical_6min_rate
+  - achieved_13min_rate
+  - mean_response_time
+  - critical_mean_time
+  n_eval_episodes: 20
+experiment:
+  device: cuda
+  name: ppo_discrete_reward_v1
+  seed: 42
+metadata:
+  author: 研究者名
+  date: '2025-01-20'
+  description: 従来の離散報酬関数による比較実験
+  notes: '- 連続報酬との比較用ベースライン
+
+    - 閾値ベースの段階的な報酬構造
+
+    - ペナルティを強化して重症優先を促進'
+network:
+  actor:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 256
+    - 128
+    - 64
+  critic:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 256
+    - 128
+  state_encoder:
+    ambulance_features: 8
+    incident_features: 8
+    spatial_features: 16
+    temporal_features: 8
+ppo:
+  batch_size: 128
+  clip_epsilon: 0.2
+  entropy_coef: 0.1
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 0.0003
+    critic: 0.0003
+    scheduler: cosine
+  max_grad_norm: 0.5
+  n_episodes: 3000
+  n_epochs: 10
+  target_kl: 0.02
+  value_loss_coeff: 0.5
+reward:
+  penalties:
+    over_13min: -30.0
+    over_6min: -10.0
+    per_minute_over: -2.0
+  use_continuous: false
+  weights:
+    coverage_preservation: 0.5
+    response_time: -1.0
+    severity_bonus: 3.0
+    threshold_penalty: -10.0
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重篤
+      - 重症
+      - 死亡
+      reward_weight: 5.0
+      time_limit_seconds: 360
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 1.0
+      time_limit_seconds: 780
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 2.0
+      time_limit_seconds: 780
+  thresholds:
+    golden_time: 360
+    standard_time: 780
+teacher:
+  decay_episodes: 1500
+  enabled: true
+  final_prob: 0.1
+  initial_prob: 0.5
+training:
+  checkpoint_interval: 100
+  early_stopping:
+    enabled: true
+    min_delta: 0.01
+    min_episodes: 1000
+    patience: 500
+  keep_last_n: 10
+  logging:
+    interval: 10
+    log_level: INFO
+    tensorboard: true
+    wandb: true

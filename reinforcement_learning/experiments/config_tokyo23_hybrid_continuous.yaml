@@ -1,0 +1,306 @@
+# config_tokyo23_hybrid_continuous.yaml
+# 東京23区全域でのハイブリッドモード実験用設定ファイル
+# continuousモードの報酬設計をハイブリッドモードに統合
+# ベース: config_tokyo23.yamlの設定を継承し、ハイブリッドモード機能を追加
+
+# ベース設定ファイルを継承
+inherits: ./config.yaml
+
+# ===================================================================
+# ハイブリッドモード戦略
+# 重症系（重症・重篤・死亡）: 直近隊運用で確実に対応
+# 軽症系（軽症・中等症）: PPO学習で効率的な配置を学習
+# ===================================================================
+
+# データパス設定（PPO戦略の初期化に必要）
+data_paths:
+  grid_mapping: "data/tokyo/processed/grid_mapping_res9.json"
+  travel_time_matrix: "data/tokyo/calibration2/linear_calibrated_response.npy"
+
+experiment:
+  name: "hybrid_continuous_ppo_mostweek_v3"
+  description: "件数が最も多い週で実験、PPOハイパラの調整"
+  seed: 2025
+  device: cuda
+
+# -------------------------------------------------------------------
+# 報酬モード設定（reward_mode.modeで報酬計算モードを指定）
+# -------------------------------------------------------------------
+reward_mode:
+  mode: hybrid  # hybridモードを使用
+
+# -------------------------------------------------------------------
+# ハイブリッドモード設定（ems_environment用）
+# -------------------------------------------------------------------
+hybrid_mode:
+  enabled: true
+  
+  # 傷病度分類
+  severity_classification:
+    severe_conditions: ["重症", "重篤", "死亡"]  # 直近隊運用（学習対象外）
+    mild_conditions: ["軽症", "中等症"]           # PPO学習対象
+  
+  # ハイブリッドモード内の報酬重み付け
+  reward_weights:
+    response_time: 0.7      # 応答時間重視（continuousの連続報酬を活かす）
+    coverage: 0.2           # カバレッジ
+    workload_balance: 0.1   # 負荷バランス
+
+# -------------------------------------------------------------------
+# データ設定 (config_tokyo23.yamlから継承)
+# -------------------------------------------------------------------
+data:
+  area_restriction:
+    enabled: true
+    area_name: "東京23区"
+    section_code: null
+    districts: [
+      "千代田区", "中央区", "港区", "新宿区", "文京区", "台東区", 
+      "墨田区", "江東区", "品川区", "目黒区", "大田区", "世田谷区", 
+      "渋谷区", "中野区", "杉並区", "豊島区", "北区", "荒川区", 
+      "板橋区", "練馬区", "足立区", "葛飾区", "江戸川区"
+    ]
+    # 次元数を明示的に定義
+    num_ambulances_in_area: 192
+    state_dim: 999  # ハイブリッドモードでも同じ状態空間
+    action_dim: 192
+
+  max_steps_per_episode: 5000  
+  episode_duration_hours: 24
+  
+  # 学習期間（軽症系が多い期間と繁忙期の両方を含む）
+  train_periods:
+    - start_date: "20231224"
+      end_date: "20231230"
+  
+  eval_periods:
+    - start_date: "20241222"
+      end_date: "20241228"
+
+# -------------------------------------------------------------------
+# PPOハイパーパラメータ (軽症系学習に最適化)
+# -------------------------------------------------------------------
+ppo:
+  n_episodes: 3000
+  batch_size: 1024
+  
+  # 学習率
+  learning_rate:
+    actor: 0.003
+    critic: 0.01
+    scheduler: constant
+  
+  # PPOパラメータ
+  n_epochs: 10
+  clip_epsilon: 0.15
+  gamma: 0.99
+  gae_lambda: 0.95
+  entropy_coef: 0.015
+  max_grad_norm: 0.5
+
+# -------------------------------------------------------------------
+# 報酬設計 (continuousモードをハイブリッドに統合)
+# -------------------------------------------------------------------
+reward:
+  # システムレベル設定
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+    unhandled_call_penalty: -1.0
+  
+  # コア報酬設定（ハイブリッド + continuous統合）
+  core:
+    mode: "hybrid"
+    
+    # カバレッジ影響重み
+    coverage_impact_weight: 0.4  # continuousモードの設定を反映
+    
+    # ===================================================================
+    # continuous報酬パラメータ（軽症系のみに適用）
+    # 目標時間からの距離に応じた滑らかな報酬関数
+    # ===================================================================
+    continuous_params:
+      # 重症系（直近隊運用なので参考値として保持）
+      critical:
+        target: 6                  # 目標: 6分
+        max_bonus: 100.0           # 最大ボーナス
+        penalty_scale: 10.0        # ペナルティスケール
+        weight: 3.0               # 重症度重み
+      
+      # 中等症（PPO学習対象）
+      moderate:
+        target: 13                # 目標: 13分
+        max_bonus: 30.0           # 最大ボーナス
+        penalty_scale: 3.0        # ペナルティスケール
+        weight: 1.5               # 重症度重み
+      
+      # 軽症（PPO学習対象）
+      mild:
+        target: 13                # 目標: 13分
+        max_bonus: 10.0           # 最大ボーナス
+        penalty_scale: 0.5        # ペナルティスケール（軽め）
+        weight: 0.5               # 重症度重み
+    
+    # ===================================================================
+    # hybrid固有パラメータ（応答時間・カバレッジ・負荷バランス）
+    # 軽症系（軽症・中等症）のPPO学習に使用
+    # ===================================================================
+    hybrid_params:
+      # 応答時間関連パラメータ
+      time_penalty_per_minute: -0.3       # 1分あたりの時間ペナルティ
+      mild_under_13min_bonus: 10.0         # 軽症13分以内達成ボーナス
+      moderate_under_13min_bonus: 30.0   # 中等症13分以内達成ボーナス
+      over_13min_penalty: -15.0            # 13分超過時のペナルティ
+      over_20min_penalty: -50.0           # 20分超過時の追加ペナルティ
+      
+      # カバレッジ関連ボーナス/ペナルティ
+      good_coverage_bonus: 10.0           # カバレッジ0.8以上
+      coverage_maintenance_bonus: 5.0     # カバレッジ0.6-0.8
+      poor_coverage_penalty: -10.0        # カバレッジ0.6未満
+      
+      # 負荷バランス関連
+      balanced_workload_bonus: 2.0        # 均等な負荷分散（平均5件未満/救急車）
+      overloaded_penalty: -5.0            # 特定救急車の過負荷（平均10件超過/救急車）
+  
+  # カバレッジパラメータ（重症系への準備度評価用）
+  coverage_params:
+    time_threshold_seconds: 360         # 6分（重症系の目標時間）
+    drop_penalty_threshold: 0.05        # カバレッジ低下閾値
+    drop_penalty_weight: -20.0          # カバレッジ低下ペナルティ
+    evaluation_interval: 100            # 100イベントごとに評価
+  
+  # エピソード報酬
+  episode:
+    base_penalty_per_minute: -0.3
+    achievement_bonuses:
+      # 重症系（直近隊運用の結果を評価）
+      severe_6min_rate: 50.0            # 重症系6分以内率ボーナス
+      critical_6min_rate: 100.0          # 重篤6分以内率ボーナス
+      
+      # 軽症系（PPO学習の結果を評価）
+      mild_13min_rate: 30.0             # 軽症13分以内率ボーナス
+      mild_20min_rate: 20.0             # 軽症20分以内率ボーナス
+      
+      # 全体評価
+      rate_13min: 10.0                  # 全体13分以内率
+      rate_6min: 20.0                   # 全体6分以内率
+    
+    failure_penalty_per_incident: -1.0
+
+# -------------------------------------------------------------------
+# 教師あり学習 (軽症系のみに適用) - 無効化
+# continuousモードでは使用していないため
+# -------------------------------------------------------------------
+teacher:
+  enabled: false
+  strategy: closest
+  apply_to: ["軽症", "中等症"]
+  initial_prob: 0.0
+  final_prob: 0.0
+  decay_episodes: 2000
+
+# -------------------------------------------------------------------
+# ネットワーク設定 (config_tokyo23.yamlから継承)
+# -------------------------------------------------------------------
+network:
+  
+  actor:
+    hidden_layers: [256, 128]
+    activation: relu
+    dropout: 0.1
+    initialization: xavier_uniform
+  
+  critic:
+    hidden_layers: [256, 128]
+    activation: relu
+    dropout: 0.1
+    init_scale: 0.001
+
+# -------------------------------------------------------------------
+# 評価設定 (ハイブリッドモード用メトリクス追加)
+# -------------------------------------------------------------------
+evaluation:
+  interval: 100
+  n_eval_episodes: 5
+  compare_baselines: ["closest", "severity_based"]
+  
+  # ハイブリッドモード専用メトリクス
+  metrics:
+    # 重症系（直近隊運用）
+    - "severe_6min_rate"
+    - "severe_mean_rt"
+    - "critical_6min_rate"
+    
+    # 軽症系（PPO学習 with continuous reward）
+    - "mild_13min_rate"
+    - "mild_20min_rate"
+    - "mild_mean_rt"
+    
+    # 全体評価
+    - "overall_13min_rate"
+    - "overall_mean_rt"
+    - "coverage_score"
+    - "workload_balance"
+    
+    # 比較
+    - "vs_closest_improvement"
+    - "dispatch_ratio"
+
+# -------------------------------------------------------------------
+# 学習管理
+# -------------------------------------------------------------------
+training:
+  checkpoint_interval: 250
+  keep_last_n: 5
+  
+  early_stopping:
+    enabled: true
+    patience: 500
+    metric: "mild_20min_rate"
+    mode: "min"
+    min_delta: 0.001
+  
+  logging:
+    interval: 10              # continuousと同じ頻度
+    tensorboard: true
+    wandb: true
+    wandb_project: "ems_hybrid_continuous_tokyo23"
+    
+    # ハイブリッドモード用ログ
+    hybrid_logs:
+      - "severe_dispatch_count"
+      - "mild_dispatch_count"
+      - "coverage_history"
+      - "warning_episodes"
+      - "continuous_reward_components"  # continuous報酬の内訳
+
+# -------------------------------------------------------------------
+# 重症度カテゴリ設定
+# -------------------------------------------------------------------
+severity:
+  categories:
+    critical:
+      conditions: ["重症", "重篤", "死亡"]
+      reward_weight: 1.0
+      time_limit_seconds: 360
+    
+    moderate:
+      conditions: ["中等症"]
+      reward_weight: 1.0
+      time_limit_seconds: 780
+    
+    mild:
+      conditions: ["軽症"]
+      reward_weight: 1.0
+      time_limit_seconds: 780
+  
+  thresholds:
+    golden_time: 360
+    standard_time: 780
+
+# -------------------------------------------------------------------
+# カリキュラム学習 - 無効化
+# -------------------------------------------------------------------
+curriculum:
+  enabled: false
+  stages: []

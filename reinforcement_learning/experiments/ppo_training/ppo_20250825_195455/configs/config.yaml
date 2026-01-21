@@ -1,0 +1,229 @@
+advanced:
+  baseline_comparison:
+    penalty_for_worse: true
+    reward_for_better: true
+    track_difference: true
+  stabilization:
+    advantage_normalization: true
+    gradient_clipping: true
+    value_clipping: true
+curriculum:
+  enabled: true
+  stages:
+  - episodes:
+    - 0
+    - 1000
+    focus: imitation
+    goals:
+      critical_improvement: 0.0
+      match_closest_rate: 0.9
+  - episodes:
+    - 1000
+    - 2000
+    focus: critical_exploration
+    goals:
+      critical_6min_rate: 0.3
+      match_closest_rate: 0.7
+  - episodes:
+    - 2000
+    - 3000
+    focus: critical_optimization
+    goals:
+      critical_6min_rate: 0.5
+      maintain_13min_rate: 0.85
+      match_closest_rate: 0.5
+data:
+  area_restriction:
+    area_name: 第一方面
+    districts:
+    - 千代田区
+    - 中央区
+    - 港区
+    enabled: true
+    section_code: 1
+  episode_duration_hours: 24
+  eval_periods:
+  - end_date: '20230420'
+    start_date: '20230416'
+  train_periods:
+  - end_date: '20230415'
+    start_date: '20230401'
+evaluation:
+  compare_baselines:
+  - closest
+  eval_deterministic: true
+  interval: 50
+  metrics:
+  - critical_6min_rate
+  - achieved_13min_rate
+  - mean_response_time
+  - vs_closest_improvement
+  n_eval_episodes: 10
+  success_criteria:
+    critical_improvement: 0.1
+    maintain_overall: 0.95
+experiment:
+  description: 直近隊運用の模倣学習から段階的改善
+  device: cpu
+  name: ppo_area1_imitation_v1
+  seed: 2222
+metadata:
+  description: '直近隊運用の模倣学習ベースアプローチ
+
+
+    主要戦略：
+
+    1. 最初は最近接戦略を95%模倣
+
+    2. 段階的に重症系のみ改善を試みる
+
+    3. 軽症・中等症は最近接に従う
+
+    4. 全体性能を維持しつつ重症改善
+
+
+    3段階カリキュラム：
+
+    - Stage 1: 完全模倣（基礎学習）
+
+    - Stage 2: 重症系の探索開始
+
+    - Stage 3: 重症系の最適化
+
+    '
+  notes: '- 24時間エピソードで事案数確保（約100件/日）
+
+    - 極めて保守的な学習率で安定性重視
+
+    - 最近接の良さを維持しつつ改善
+
+    - 重症系（全体の10%）のみに焦点
+
+    - 3000エピソードで十分な学習機会'
+network:
+  actor:
+    activation: relu
+    dropout: 0.0
+    hidden_layers:
+    - 64
+    - 32
+    initialization: xavier_uniform
+  critic:
+    activation: relu
+    dropout: 0.0
+    hidden_layers:
+    - 64
+    - 32
+    init_scale: 0.001
+  state_encoder:
+    ambulance_features: 4
+    incident_features: 10
+    spatial_features: 20
+    temporal_features: 8
+ppo:
+  batch_size: 256
+  clip_epsilon: 0.05
+  entropy_coef: 0.001
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 1.0e-05
+    critic: 5.0e-05
+    scheduler: constant
+  max_grad_norm: 0.1
+  n_episodes: 3000
+  n_epochs: 2
+  target_kl: 0.005
+  value_loss_coeff: 1.0
+reward:
+  base_reward: 0.0
+  imitation:
+    critical_exception:
+      better_than_closest: 50.0
+      worse_than_closest: -10.0
+    deviation_penalty: -5.0
+    match_closest: 10.0
+  improvement_bonus:
+    episode_0_1000:
+      critical_improvement: 10.0
+    episode_1000_2000:
+      critical_improvement: 30.0
+    episode_2000_3000:
+      critical_improvement: 50.0
+  penalties:
+    over_13min: -20.0
+    over_6min: -5.0
+    per_minute_over: -1.0
+  performance_maintenance:
+    below_baseline_13min: -20.0
+    maintain_baseline: 10.0
+  response_time:
+    critical:
+      over_8min: -20.0
+      under_5min: 100.0
+      under_6min: 50.0
+      under_8min: 20.0
+    mild:
+      different: -2.0
+      follow_closest: 5.0
+    moderate:
+      over_13min: -5.0
+      under_10min: 10.0
+      under_13min: 5.0
+  weights:
+    coverage_preservation: 0.5
+    response_time: -1.0
+    severity_bonus: 2.0
+    threshold_penalty: -10.0
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重篤
+      - 重症
+      - 死亡
+      reward_weight: 5.0
+      time_limit_seconds: 360
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 1.0
+      time_limit_seconds: 780
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 2.0
+      time_limit_seconds: 480
+  thresholds:
+    golden_time: 360
+    standard_time: 780
+teacher:
+  adaptive_recovery:
+    check_interval: 50
+    enabled: true
+    min_performance: 0.8
+  decay_episodes: 2000
+  enabled: true
+  final_prob: 0.5
+  initial_prob: 0.95
+  severity_specific:
+    critical_teacher_prob: 0.3
+    mild_teacher_prob: 0.8
+  strategy: closest
+training:
+  checkpoint_interval: 100
+  early_stopping:
+    enabled: false
+    min_delta: 0.001
+    patience: 500
+  gradient_accumulation: 4
+  keep_last_n: 20
+  logging:
+    detailed_logs:
+    - imitation_rate
+    - critical_performance
+    - deviation_from_closest
+    interval: 10
+    log_level: INFO
+    tensorboard: true
+    wandb: true

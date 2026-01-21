@@ -1,0 +1,190 @@
+# ================================================================
+# config_normal_unified_v6.yaml
+# 通常PPO（非ハイブリッド）のリング数統一版
+# 
+# 【v6/v6bとの違い】
+# - hybrid_mode: false（重症系もPPOが判断）
+# - カバレッジ計算は傷病度考慮運用と統一（リング6）
+# 
+# 【目的】
+# - 重症系でもPPOが直近隊以外を選択する可能性を検証
+# - ハイブリッド vs 通常PPOの比較
+# ================================================================
+
+# ベース設定を継承
+inherits: ./config.yaml
+
+# ================================================================
+# 実験設定
+# ================================================================
+experiment:
+  name: "normal_unified_v6"
+  description: |
+    通常PPO v6: カバレッジ計算を傷病度考慮運用と統一（非ハイブリッド）
+    
+    【特徴】
+    - hybrid_mode: false（重症系もPPOが判断）
+    - リング数6、サンプル20（傷病度考慮運用と同じ）
+    
+    【検証ポイント】
+    - 重症系でPPOが直近隊以外を選択するか
+    - ハイブリッドv6との性能比較
+  seed: 2025
+  device: "cuda"
+
+# ================================================================
+# PPO設定
+# ================================================================
+ppo:
+  n_episodes: 1000  # 短期テスト用（元: 3000）
+  batch_size: 512
+  n_epochs: 4
+  clip_epsilon: 0.1
+  
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001
+    scheduler: "constant"
+  
+  gamma: 0.99
+  gae_lambda: 0.95
+  entropy_coef: 0.035
+  max_grad_norm: 0.5
+
+# ================================================================
+# 状態空間（46次元）
+# ================================================================
+state_encoding:
+  mode: 'compact'
+  top_k: 10
+  normalization:
+    max_travel_time_minutes: 30
+    max_station_distance_km: 10
+  
+  # カバレッジ考慮型ソート（傷病度考慮運用と完全統一）
+  coverage_aware_sorting:
+    enabled: true
+    time_weight: 0.6
+    coverage_weight: 0.4
+    sample_size: 20
+    sample_radius: 6
+    pre_filter_size: 30
+    use_adaptive_sampling: true
+    max_candidates_for_advanced: 50
+
+# ================================================================
+# ★★★ 非ハイブリッドモード ★★★
+# ================================================================
+hybrid_mode:
+  enabled: false  # 重症系もPPOが判断
+
+# ================================================================
+# 報酬設定
+# ================================================================
+reward:
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+  
+  unified:
+    critical_max_bonus: 50.0
+    critical_lambda: 0.115
+    critical_penalty_scale: 5.0
+    critical_penalty_power: 1.5
+    
+    mild_max_bonus: 10.0
+    mild_penalty_scale: 1.0
+    
+    coverage_w6: 1.0
+    coverage_w13: 0.0
+    coverage_penalty_scale: 35.0
+    
+    time_weight: 0.3
+    coverage_weight: 0.7
+  
+  # 報酬計算用カバレッジ設定（傷病度考慮運用と完全統一）
+  core:
+    mild_params:
+      sample_points: 20
+      sample_radius: 6
+      coverage_6min_weight: 0.5
+      coverage_13min_weight: 0.5
+
+# ================================================================
+# ネットワーク設定
+# ================================================================
+network:
+  actor:
+    hidden_layers: [128, 64]
+    activation: "relu"
+    dropout: 0.2
+  
+  critic:
+    hidden_layers: [128, 64]
+    activation: "relu"
+    dropout: 0.2
+
+# ================================================================
+# 学習管理
+# ================================================================
+training:
+  checkpoint_interval: 500
+  keep_last_n: 7
+  
+  early_stopping:
+    enabled: true
+    patience: 500
+    min_delta: 0.001
+  
+  logging:
+    interval: 50
+    tensorboard: false
+    wandb: true
+    wandb_project: "ems_ppo_normal"  # 既存プロジェクトに統一
+
+# ================================================================
+# 評価設定
+# ================================================================
+evaluation:
+  interval: 500
+  n_eval_episodes: 10
+  compare_baselines: ["closest"]
+  metrics:
+    - "critical_6min_rate"
+    - "achieved_13min_rate"
+    - "mean_response_time"
+    - "non_closest_selection_rate"
+
+# ================================================================
+# データ設定
+# ================================================================
+data:
+  data_paths:
+    grid_mapping: "data/tokyo/processed/grid_mapping_res9.json"
+    travel_time_matrix: "data/tokyo/calibration2/linear_calibrated_response.npy"
+  
+  episode_duration_hours: 24
+  exclude_daytime_ambulances: true
+  
+  area_restriction:
+    enabled: false
+  
+  train_periods:
+    - start_date: "20230401"
+      end_date: "20230430"
+  
+  eval_periods:
+    - start_date: "20230501"
+      end_date: "20230507"
+
+# ================================================================
+# 傷病度設定
+# ================================================================
+severity:
+  categories:
+    critical:
+      conditions: ["重症", "重篤", "死亡"]
+      reward_weight: 1.0
+    mild:
+      conditions: ["軽症", "中等症"]
+      reward_weight: 1.0

@@ -1,0 +1,143 @@
+data:
+  episode_duration_hours: 24
+  eval_periods:
+  - end_date: '20230507'
+    start_date: '20230501'
+  train_periods:
+  - end_date: '20230430'
+    start_date: '20230401'
+  - end_date: '20231230'
+    start_date: '20231201'
+data_paths:
+  grid_mapping: data/tokyo/processed/grid_mapping_res9.json
+  travel_time_matrix: data/tokyo/calibration2/linear_calibrated_response.npy
+evaluation:
+  compare_baselines:
+  - closest
+  - severity_based
+  interval: 100
+  metrics:
+  - mean_response_time
+  - response_time_by_severity
+  - 6min_achievement_rate
+  - 13min_achievement_rate
+  - critical_6min_rate
+  n_eval_episodes: 10
+experiment:
+  device: cuda
+  name: ppo_dispatch_optimization
+  seed: 42
+network:
+  actor:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 256
+    - 128
+    - 64
+  critic:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 256
+    - 128
+  state_encoder:
+    ambulance_features: 8
+    incident_features: 6
+    spatial_features: 16
+    temporal_features: 8
+ppo:
+  batch_size: 64
+  clip_epsilon: 0.2
+  entropy_coef: 0.01
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 0.0003
+    critic: 0.0003
+    scheduler: cosine
+  n_episodes: 10000
+  n_epochs: 10
+reward:
+  core:
+    continuous_params:
+      critical:
+        max_bonus: 50.0
+        penalty_scale: 5.0
+        target: 6
+        weight: 5.0
+      mild:
+        max_bonus: 10.0
+        penalty_scale: 0.5
+        target: 13
+        weight: 1.0
+      moderate:
+        max_bonus: 20.0
+        penalty_scale: 2.0
+        target: 13
+        weight: 2.0
+    coverage_impact_weight: 0.5
+    discrete_params:
+      penalties:
+        over_13min: -15.0
+        over_6min: -10.0
+        per_minute_over: -2.0
+      weights:
+        coverage_preservation: 0.5
+        response_time: 2.0
+        severity_bonus: 3.0
+    mode: continuous
+  episode:
+    achievement_bonuses:
+      critical_6min_rate: 100.0
+      rate_13min: 30.0
+      rate_6min: 50.0
+    base_penalty_per_minute: -1.0
+    failure_penalty_per_incident: -1.0
+  legacy:
+    penalties:
+      over_13min: -20.0
+      over_6min: -5.0
+      per_minute_over: -1.0
+    weights:
+      coverage_preservation: 0.5
+      response_time: -1.0
+      severity_bonus: 2.0
+      threshold_penalty: -10.0
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+    unhandled_call_penalty: -1.0
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重症
+      - 重篤
+      - 死亡
+      reward_weight: 5.0
+      time_limit_seconds: 360
+    mild:
+      conditions:
+      - 軽症
+      reward_weight: 1.0
+      time_limit_seconds: 780
+    moderate:
+      conditions:
+      - 中等症
+      reward_weight: 2.0
+      time_limit_seconds: 480
+  thresholds:
+    golden_time: 360
+    standard_time: 780
+training:
+  checkpoint_interval: 100
+  early_stopping:
+    enabled: true
+    min_delta: 0.001
+    patience: 500
+  keep_last_n: 5
+  logging:
+    interval: 10
+    tensorboard: true
+    wandb: true
