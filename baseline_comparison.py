@@ -67,7 +67,7 @@ EXPERIMENT_CONFIG = {
         # 'mexclp',
         # 'ppo_agent',   # 従来PPO（ベースライン）
         'ppo_slot1',   # スロット1（パスを差し替えて利用）
-        'ppo_slot2',   # スロット2
+        # 'ppo_slot2',   # スロット2
         # 'ppo_slot3',   # スロット3
         # 'ppo_slot4', # スロット4（必要ならコメント解除）
     ],
@@ -83,8 +83,8 @@ EXPERIMENT_CONFIG = {
         'ppo_agent': 'PPOエージェント（hybrid_intermediate_v4）',
         'mexclp': 'MEXCLP運用',
         # ↓ PPOスロット用の表示名
-        'ppo_slot1': 'PPOエージェント（hybrid_unified_v7_lowpen）',
-        'ppo_slot2': 'PPOエージェント（hybrid_unified_v7_time）',
+        'ppo_slot1': 'PPOエージェント（hybrid_unified_v7_time）',
+        'ppo_slot2': 'PPOエージェント（hybrid_unified_v8b）',
         'ppo_slot3': 'PPOエージェント（hybrid_unified_v6b）',
         'ppo_slot4': 'PPOエージェント（hybrid_unified_v6c）',
     },
@@ -153,7 +153,7 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v7_lowpen_quick'  # ←ここを差し替えてください
+                / 'hybrid_unified_v7_time'  # ←ここを差し替えてください
                 / 'checkpoints'
                 / 'best_model.pth'
             ),
@@ -162,7 +162,7 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v7_lowpen_quick'  # ←ここを差し替えてください
+                / 'hybrid_unified_v7_time'  # ←ここを差し替えてください
                 / 'configs'
                 / 'config.yaml'
             ),
@@ -176,7 +176,7 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v7_time_quick'  # ←ここを差し替えてください
+                / 'hybrid_unified_v8b_quick'  # ←ここを差し替えてください
                 / 'checkpoints'
                 / 'best_model.pth'
             ),
@@ -185,7 +185,7 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v7_time_quick'  # ←ここを差し替えてください
+                / 'hybrid_unified_v8b_quick'  # ←ここを差し替えてください
                 / 'configs'
                 / 'config.yaml'
             ),
