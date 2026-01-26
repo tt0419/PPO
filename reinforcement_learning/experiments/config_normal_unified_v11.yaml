@@ -1,0 +1,153 @@
+# ================================================================
+# config_normal_unified_v11_critical_focus.yaml
+# 重症系6分達成に全振りした報酬設計
+# 
+# 【方針】
+# - 非ハイブリッドモード: 重症系もPPO学習対象
+# - 重症系: 6分以内達成に超高ボーナス、超過に急激なペナルティ
+# - 軽症系: 時間最小化優先（カバレッジは軽視）
+# 
+# 【期待される効果】
+# - 重症系の応答時間を最小化
+# - 軽症系は直近隊運用に近い選択
+# - 全体としてシンプルな「時間最小化」戦略
+# ================================================================
+
+inherits: ./config.yaml
+
+experiment:
+  name: "normal_unified_v11_critical_focus"
+  description: |
+    重症系6分達成に全振り（非ハイブリッド）
+    - 重症系: 6分以内に超高ボーナス、超過に急激ペナルティ
+    - 軽症系: 時間最小化優先
+  seed: 2025
+  device: "cuda"
+
+ppo:
+  n_episodes: 500
+  batch_size: 512
+  n_epochs: 4
+  clip_epsilon: 0.1
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001
+    scheduler: "constant"
+  gamma: 0.99
+  gae_lambda: 0.95
+  entropy_coef: 0.035
+  max_grad_norm: 0.5
+
+state_encoding:
+  mode: 'compact'
+  top_k: 10
+  normalization:
+    max_travel_time_minutes: 30
+    max_station_distance_km: 10
+  coverage_aware_sorting:
+    enabled: true
+    time_weight: 0.9       # ★★★ 時間重視 ★★★
+    coverage_weight: 0.1   # ★★★ カバレッジ軽視 ★★★
+    sample_size: 61
+    sample_radius: 4
+    pre_filter_size: 30
+    use_adaptive_sampling: true
+    max_candidates_for_advanced: 50
+  compact_coverage:
+    sample_radius: 4
+    sample_size: 61
+
+# ★★★ 非ハイブリッドモード: 重症系もPPO学習対象 ★★★
+hybrid_mode:
+  enabled: false
+
+reward:
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+  unified:
+    # スコアベースモードは使用しない
+    score_based_mode: false
+    
+    # ★★★ 重症系パラメータ: 6分達成に全振り ★★★
+    critical_max_bonus: 100.0      # 大きなボーナス（50→100）
+    critical_lambda: 0.2           # 急峻な減衰（0.115→0.2）
+    critical_penalty_scale: 10.0   # 大きなペナルティ（5→10）
+    critical_penalty_power: 2.0    # 急激な増加（1.5→2.0）
+    
+    # 軽症系パラメータ: 時間最小化優先
+    mild_max_bonus: 10.0
+    mild_penalty_scale: 1.0
+    
+    # カバレッジパラメータ: 軽視
+    coverage_w6: 0.5
+    coverage_w13: 0.5
+    coverage_penalty_scale: 5.0    # ★★★ 小さく（35→5） ★★★
+    
+    # ★★★ 時間重視の重み配分 ★★★
+    time_weight: 0.9
+    coverage_weight: 0.1
+  
+  core:
+    mild_params:
+      sample_points: 61
+      sample_radius: 4
+      coverage_6min_weight: 0.5
+      coverage_13min_weight: 0.5
+
+network:
+  actor:
+    hidden_layers: [128, 64]
+    activation: "relu"
+    dropout: 0.2
+  critic:
+    hidden_layers: [128, 64]
+    activation: "relu"
+    dropout: 0.1
+
+training:
+  checkpoint_interval: 500
+  keep_last_n: 7
+  early_stopping:
+    enabled: true
+    patience: 500
+    min_delta: 0.001
+  logging:
+    interval: 50
+    tensorboard: false
+    wandb: true
+    wandb_project: "ems_ppo_hybrid"
+
+evaluation:
+  interval: 500
+  n_eval_episodes: 10
+  compare_baselines: ["closest"]
+  metrics:
+    - "critical_6min_rate"
+    - "achieved_13min_rate"
+    - "mean_response_time"
+    - "non_closest_selection_rate"
+
+data:
+  data_paths:
+    grid_mapping: "data/tokyo/processed/grid_mapping_res9.json"
+    travel_time_matrix: "data/tokyo/calibration2/linear_calibrated_response.npy"
+  episode_duration_hours: 24
+  exclude_daytime_ambulances: true
+  area_restriction:
+    enabled: false
+  train_periods:
+    - start_date: "20230401"
+      end_date: "20230430"
+  eval_periods:
+    - start_date: "20230501"
+      end_date: "20230507"
+
+severity:
+  categories:
+    critical:
+      conditions: ["重症", "重篤", "死亡"]
+      reward_weight: 1.0
+    mild:
+      conditions: ["軽症", "中等症"]
+      reward_weight: 1.0
