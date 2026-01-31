@@ -1,0 +1,199 @@
+# ==============================================================================
+# PPO Hybrid Unified v13h - エピソード数増加（1000 episodes）
+# ==============================================================================
+# 【目的】
+# - 500エピソードで十分に学習できているか確認
+# - 学習曲線の収束状況を確認
+# - 過学習の兆候がないか確認
+#
+# 【変更点】
+# - n_episodes: 500 → 1000（2倍）
+# - 他はv13b（決定論的、カバレッジ重視）と同じ
+#
+# 【確認ポイント】
+# - critic_lossの推移（500エピソード以降も改善するか）
+# - 直近隊選択率の安定性
+# - 検証期間での性能（過学習していないか）
+# ==============================================================================
+
+inherits: ./config_hybrid_unified_v13.yaml
+
+experiment:
+  name: "hybrid_unified_v13h_long_training"
+  description: |
+    エピソード数増加版（1000 episodes）
+    500エピソードで十分に学習できているか確認
+    過学習の兆候がないか確認
+  seed: 2025
+  device: "cuda"
+
+# ==============================================================================
+# 報酬設計（v13bと同じ）
+# ==============================================================================
+reward:
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+  unified:
+    enabled: true
+    score_based_mode: true
+    score_scale: 5.0
+    time_score_weight: 0.4
+    coverage_loss_weight: 0.6
+    time_normalization: 13.0
+    coverage_w6: 0.5
+    coverage_w13: 0.5
+    critical_max_bonus: 50.0
+    critical_lambda: 0.115
+    critical_penalty_scale: 5.0
+    critical_penalty_power: 1.5
+    mild_max_bonus: 10.0
+    mild_penalty_scale: 1.0
+    coverage_penalty_scale: 50.0
+    time_weight: 0.4
+    coverage_weight: 0.6
+    
+    time_reward:
+      enabled: true
+      scale: 5.0
+      normalization_minutes: 13.0
+    
+    coverage_penalty:
+      enabled: true
+      scale: 50.0
+      L6_weight: 0.5
+      L13_weight: 0.5
+      threshold_penalty:
+        enabled: false
+  core:
+    mild_params:
+      sample_points: 61
+      sample_radius: 4
+      coverage_6min_weight: 0.5
+      coverage_13min_weight: 0.5
+
+# ==============================================================================
+# PPOハイパーパラメータ
+# ==============================================================================
+ppo:
+  n_episodes: 1000              # ★ 500 → 1000
+  batch_size: 512
+  n_epochs: 4
+  clip_epsilon: 0.1
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001
+    scheduler: "constant"
+  gamma: 0.99
+  gae_lambda: 0.95
+  entropy_coef: 0.035
+  max_grad_norm: 0.5
+
+# ==============================================================================
+# 状態エンコーディング設定（v2: 決定論的カバレッジ）
+# ==============================================================================
+state_encoding:
+  mode: "compact"
+  version: "v2"
+  top_k: 10
+  normalization:
+    max_travel_time_minutes: 30
+    max_station_distance_km: 10
+  coverage_calculation:
+    mode: "deterministic"
+    use_station_coverage_calculator: true
+    station_coverage_file: "station_coverage.json"
+  coverage_aware_sorting:
+    enabled: false
+    time_weight: 0.6
+    coverage_weight: 0.4
+    sample_size: 61
+    sample_radius: 4
+    pre_filter_size: 30
+    use_adaptive_sampling: false
+    max_candidates_for_advanced: 50
+  compact_coverage:
+    sample_radius: 4
+    sample_size: 61
+
+# ==============================================================================
+# ハイブリッドモード設定
+# ==============================================================================
+hybrid_mode:
+  enabled: true
+  severity_classification:
+    severe_conditions: ["重症", "重篤", "死亡"]
+    mild_conditions: ["軽症", "中等症"]
+
+# ==============================================================================
+# ネットワーク設定
+# ==============================================================================
+network:
+  actor:
+    hidden_layers: [128, 64]
+    activation: "relu"
+    dropout: 0.2
+  critic:
+    hidden_layers: [128, 64]
+    activation: "relu"
+    dropout: 0.1
+
+# ==============================================================================
+# 学習設定
+# ==============================================================================
+training:
+  checkpoint_interval: 500
+  keep_last_n: 7
+  early_stopping:
+    enabled: true
+    patience: 500
+    min_delta: 0.001
+  logging:
+    interval: 50
+    tensorboard: false
+    wandb: true
+    wandb_project: "ems_ppo_hybrid"
+
+# ==============================================================================
+# 評価設定
+# ==============================================================================
+evaluation:
+  interval: 500
+  n_eval_episodes: 10
+  compare_baselines: ["closest"]
+  metrics:
+    - "critical_6min_rate"
+    - "achieved_13min_rate"
+    - "mean_response_time"
+    - "non_closest_selection_rate"
+
+# ==============================================================================
+# データ設定
+# ==============================================================================
+data:
+  data_paths:
+    grid_mapping: "data/tokyo/processed/grid_mapping_res9.json"
+    travel_time_matrix: "data/tokyo/calibration2/linear_calibrated_response.npy"
+    station_coverage: "data/tokyo/processed/station_coverage.json"
+  episode_duration_hours: 24
+  exclude_daytime_ambulances: true
+  area_restriction:
+    enabled: false
+  train_periods:
+    - start_date: "20230401"
+      end_date: "20230430"
+  eval_periods:
+    - start_date: "20230501"
+      end_date: "20230507"
+
+# ==============================================================================
+# 傷病度設定
+# ==============================================================================
+severity:
+  categories:
+    critical:
+      conditions: ["重症", "重篤", "死亡"]
+      reward_weight: 1.0
+    mild:
+      conditions: ["軽症", "中等症"]
+      reward_weight: 1.0

@@ -1,0 +1,173 @@
+data:
+  area_restriction:
+    area_name: default
+    districts: []
+    enabled: false
+    num_ambulances_in_area: 192
+  data_paths:
+    grid_mapping: data/tokyo/processed/grid_mapping_res9.json
+    station_coverage: data/tokyo/processed/station_coverage.json
+    travel_time_matrix: data/tokyo/calibration2/linear_calibrated_response.npy
+  episode_duration_hours: 24
+  eval_periods:
+  - end_date: '20231015'
+    start_date: '20230917'
+  exclude_daytime_ambulances: true
+  train_periods:
+  - description: 春・低件数
+    end_date: '20230514'
+    start_date: '20230409'
+  - description: 夏・高件数
+    end_date: '20230730'
+    start_date: '20230709'
+  - description: 冬・高重症
+    end_date: '20231217'
+    start_date: '20231119'
+  use_random_start: true
+evaluation:
+  compare_baselines:
+  - closest
+  interval: 500
+  metrics:
+  - critical_6min_rate
+  - achieved_13min_rate
+  - mean_response_time
+  - non_closest_selection_rate
+  n_eval_episodes: 10
+experiment:
+  description: '訓練期間を複数季節に拡張
+
+    春（4月）・夏（7月）・冬（12月）の3期間で訓練
+
+    季節変動への汎化性能を確認
+
+    '
+  device: cuda
+  name: hybrid_unified_v13i_multi_season
+  seed: 2025
+hybrid_mode:
+  enabled: true
+  severity_classification:
+    mild_conditions:
+    - 軽症
+    - 中等症
+    severe_conditions:
+    - 重症
+    - 重篤
+    - 死亡
+inherits: ./config_hybrid_unified_v13.yaml
+network:
+  actor:
+    activation: relu
+    dropout: 0.2
+    hidden_layers:
+    - 128
+    - 64
+    initialization: xavier_uniform
+  critic:
+    activation: relu
+    dropout: 0.1
+    hidden_layers:
+    - 128
+    - 64
+    init_scale: 0.001
+ppo:
+  batch_size: 512
+  clip_epsilon: 0.1
+  entropy_coef: 0.035
+  gae_lambda: 0.95
+  gamma: 0.99
+  learning_rate:
+    actor: 0.0003
+    critic: 0.001
+    scheduler: constant
+  max_grad_norm: 0.5
+  n_episodes: 2000
+  n_epochs: 4
+reward:
+  core:
+    mild_params:
+      coverage_13min_weight: 0.5
+      coverage_6min_weight: 0.5
+      sample_points: 61
+      sample_radius: 4
+  system:
+    dispatch_failure: -1.0
+    no_available_ambulance: 0.0
+  unified:
+    coverage_loss_weight: 0.6
+    coverage_penalty:
+      L13_weight: 0.5
+      L6_weight: 0.5
+      enabled: true
+      scale: 50.0
+      threshold_penalty:
+        enabled: false
+    coverage_penalty_scale: 50.0
+    coverage_w13: 0.5
+    coverage_w6: 0.5
+    coverage_weight: 0.6
+    critical_lambda: 0.115
+    critical_max_bonus: 50.0
+    critical_penalty_power: 1.5
+    critical_penalty_scale: 5.0
+    enabled: true
+    mild_max_bonus: 10.0
+    mild_penalty_scale: 1.0
+    score_based_mode: true
+    score_scale: 5.0
+    time_normalization: 13.0
+    time_reward:
+      enabled: true
+      normalization_minutes: 13.0
+      scale: 5.0
+    time_score_weight: 0.4
+    time_weight: 0.4
+severity:
+  categories:
+    critical:
+      conditions:
+      - 重症
+      - 重篤
+      - 死亡
+      reward_weight: 1.0
+    mild:
+      conditions:
+      - 軽症
+      - 中等症
+      reward_weight: 1.0
+state_encoding:
+  compact_coverage:
+    sample_radius: 4
+    sample_size: 61
+  coverage_aware_sorting:
+    coverage_weight: 0.4
+    enabled: false
+    max_candidates_for_advanced: 50
+    pre_filter_size: 30
+    sample_radius: 4
+    sample_size: 61
+    time_weight: 0.6
+    use_adaptive_sampling: false
+  coverage_calculation:
+    mode: deterministic
+    station_coverage_file: station_coverage.json
+    use_station_coverage_calculator: true
+  mode: compact
+  normalization:
+    max_station_distance_km: 10
+    max_travel_time_minutes: 30
+  top_k: 10
+  version: v2
+training:
+  checkpoint_interval: 500
+  early_stopping:
+    enabled: true
+    min_delta: 0.001
+    patience: 500
+  keep_last_n: 7
+  logging:
+    interval: 50
+    tensorboard: false
+    wandb: true
+    wandb_project: ems_ppo_hybrid

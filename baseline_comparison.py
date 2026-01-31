@@ -83,9 +83,9 @@ EXPERIMENT_CONFIG = {
         'ppo_agent': 'PPOエージェント（hybrid_intermediate_v4）',
         'mexclp': 'MEXCLP運用',
         # ↓ PPOスロット用の表示名
-        'ppo_slot1': 'PPOエージェント（hybrid_unified_v12a）',
-        'ppo_slot2': 'PPOエージェント（hybrid_unified_v12b）',
-        'ppo_slot3': 'PPOエージェント（hybrid_unified_v12c）',
+        'ppo_slot1': 'PPOエージェント（normal_unified_v14a）',
+        'ppo_slot2': 'PPOエージェント（normal_unified_v14b）',
+        'ppo_slot3': 'PPOエージェント（normal_unified_v14c）',
         'ppo_slot4': 'PPOエージェント（hybrid_unified_v6c）',
     },
     
@@ -153,7 +153,7 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v12a_quick'  # ←ここを差し替えてください
+                / 'normal_unified_v14a'  # ←ここを差し替えてください
                 / 'checkpoints'
                 / 'best_model.pth'
             ),
@@ -162,11 +162,11 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v12a_quick'  # ←ここを差し替えてください
+                / 'normal_unified_v14a'  # ←ここを差し替えてください
                 / 'configs'
                 / 'config.yaml'
             ),
-            'hybrid_mode': True,
+            'hybrid_mode': False,
             'severe_conditions': ['重症', '重篤', '死亡'],
             'mild_conditions': ['軽症', '中等症'],
         },
@@ -176,7 +176,7 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v12b_quick'  # ←ここを差し替えてください
+                / 'normal_unified_v14b'  # ←ここを差し替えてください
                 / 'checkpoints'
                 / 'best_model.pth'
             ),
@@ -185,11 +185,11 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v12b_quick'  # ←ここを差し替えてください
+                / 'normal_unified_v14b'  # ←ここを差し替えてください
                 / 'configs'
                 / 'config.yaml'
             ),
-            'hybrid_mode': True,
+            'hybrid_mode': False,
             'severe_conditions': ['重症', '重篤', '死亡'],
             'mild_conditions': ['軽症', '中等症'],
         },
@@ -199,7 +199,7 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v12c_quick'  # ←ここを差し替えてください
+                / 'normal_unified_v14c'  # ←ここを差し替えてください
                 / 'checkpoints'
                 / 'best_model.pth'
             ),
@@ -208,11 +208,11 @@ EXPERIMENT_CONFIG = {
                 / 'reinforcement_learning'
                 / 'experiments'
                 / 'ppo_training'
-                / 'hybrid_unified_v12c_quick'  # ←ここを差し替えてください
+                / 'normal_unified_v14c'  # ←ここを差し替えてください
                 / 'configs'
                 / 'config.yaml'
             ),
-            'hybrid_mode': True,
+            'hybrid_mode': False,
             'severe_conditions': ['重症', '重篤', '死亡'],
             'mild_conditions': ['軽症', '中等症'],
         },

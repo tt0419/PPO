@@ -36,6 +36,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from data_cache import get_emergency_data_cache
 from constants import SEVERITY_GROUPS, is_severe_condition, get_severity_time_limit
 
+# ★★★ v13: 事前計算カバレッジ計算モジュール ★★★
+from .station_coverage_calculator import StationCoverageCalculator
+
 # ServiceTimeGeneratorEnhancedのインポート
 # 現在のプロジェクトディレクトリ（05_Ambulance_RL）を取得
 CURRENT_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent  # 05_Ambulance_RL ディレクトリ
@@ -190,28 +193,77 @@ class EMSEnvironment:
         
         # ========== 状態・行動空間の次元設定 ==========
         if self.compact_mode:
-            # コンパクトモード: action_dim = top_k, state_dim = 37
+            # コンパクトモード: action_dim = top_k, state_dim = 46
             self.action_dim = self.top_k
             
-            from .state_encoder import CompactStateEncoder
-            self.state_encoder = CompactStateEncoder(
-                config=self.config,
-                top_k=self.top_k,
-                travel_time_matrix=response_matrix,
-                grid_mapping=self.grid_mapping
-            )
+            # ★★★ v13: 状態エンコーディングのバージョンを確認 ★★★
+            encoding_version = state_encoding_config.get('version', 'v1')
+            
+            if encoding_version == 'v2':
+                # v2: 決定論的カバレッジ計算（事前計算方式）
+                coverage_config = state_encoding_config.get('coverage_calculation', {})
+                station_coverage_file = coverage_config.get('station_coverage_file', 'station_coverage.json')
+                
+                # StationCoverageCalculatorを読み込み
+                coverage_path = self.base_dir / "processed" / station_coverage_file
+                if coverage_path.exists():
+                    self.station_coverage_calculator = StationCoverageCalculator.load(str(coverage_path))
+                    print(f"★ 事前計算カバレッジ読み込み完了: {coverage_path}")
+                else:
+                    # ファイルがない場合は事前計算を実行
+                    print(f"警告: {coverage_path} が見つかりません。事前計算を実行します...")
+                    self.station_coverage_calculator = StationCoverageCalculator()
+                    self.station_coverage_calculator.compute_coverage(
+                        ambulance_data=self.ambulance_data,
+                        travel_time_matrix=response_matrix,
+                        grid_mapping=self.grid_mapping,
+                        verbose=True
+                    )
+                    # 計算結果を保存
+                    self.station_coverage_calculator.save(str(coverage_path))
+                    print(f"★ 事前計算カバレッジを保存: {coverage_path}")
+                
+                # CompactStateEncoderV2を使用
+                from .state_encoder_v2 import CompactStateEncoderV2
+                self.state_encoder = CompactStateEncoderV2(
+                    config=self.config,
+                    top_k=self.top_k,
+                    travel_time_matrix=response_matrix,
+                    grid_mapping=self.grid_mapping,
+                    station_coverage_calculator=self.station_coverage_calculator
+                )
+                
+                print("=" * 60)
+                print(f"★ コンパクトモード有効: Top-{self.top_k}")
+                print(f"  状態次元: {self.state_encoder.state_dim}")
+                print(f"  行動次元: {self.action_dim}")
+                print(f"  カバレッジ計算: 決定論的方式 (v2)")
+                print("=" * 60)
+            else:
+                # v1: 従来のランダムサンプリング方式
+                self.station_coverage_calculator = None  # v1では使用しない
+                
+                from .state_encoder import CompactStateEncoder
+                self.state_encoder = CompactStateEncoder(
+                    config=self.config,
+                    top_k=self.top_k,
+                    travel_time_matrix=response_matrix,
+                    grid_mapping=self.grid_mapping
+                )
+                
+                print("=" * 60)
+                print(f"★ コンパクトモード有効: Top-{self.top_k}")
+                print(f"  状態次元: {self.state_encoder.state_dim}")
+                print(f"  行動次元: {self.action_dim}")
+                print(f"  カバレッジ計算: ランダムサンプリング方式 (v1)")
+                print("=" * 60)
             
             # Top-K救急車のIDを保持するリスト（step()で使用）
             self.current_top_k_ids = []
-            
-            print("=" * 60)
-            print(f"★ コンパクトモード有効: Top-{self.top_k}")
-            print(f"  状態次元: {self.state_encoder.state_dim}")
-            print(f"  行動次元: {self.action_dim}")
-            print("=" * 60)
         else:
             # 従来モード: action_dim = 全救急車数, state_dim = 999
             self.action_dim = len(self.ambulance_data)
+            self.station_coverage_calculator = None  # 従来モードでは使用しない
             
             from .state_encoder import StateEncoder
             self.state_encoder = StateEncoder(
@@ -1348,7 +1400,7 @@ class EMSEnvironment:
                                  selected_ambulance_id: int,
                                  available_ambulances_before: Optional[List[int]],
                                  request_h3: Optional[str]) -> float:
-        """選択した救急車によるカバレッジ損失を計算"""
+        """選択した救急車によるカバレッジ損失を計算（v2: 事前計算方式対応）"""
         if self.reward_designer.mode != 'coverage_aware':
             return 0.0
         if selected_ambulance_id not in self.ambulance_states:
@@ -1361,6 +1413,15 @@ class EMSEnvironment:
         if not station_h3:
             return 0.0
         
+        # ★★★ v13: 事前計算方式が利用可能な場合はそちらを使用 ★★★
+        if self.station_coverage_calculator is not None:
+            return self._calculate_coverage_loss_v2(
+                selected_ambulance_id,
+                available_ambulances_before,
+                station_h3
+            )
+        
+        # ★★★ 以下は従来のランダムサンプリング方式（フォールバック） ★★★
         coverage_config = self.config.get('reward', {}).get('core', {}).get('mild_params', {})
         sample_points = coverage_config.get('sample_points', 20)
         sample_radius = coverage_config.get('sample_radius', 2)
@@ -1406,6 +1467,58 @@ class EMSEnvironment:
         loss_13 = (coverage_13min_before - coverage_13min_after) / total_points
         combined_loss = loss_6 * weight_6min + loss_13 * weight_13min
         return max(0.0, min(1.0, combined_loss))
+    
+    def _calculate_coverage_loss_v2(self,
+                                    selected_ambulance_id: int,
+                                    available_ambulances_before: List[int],
+                                    station_h3: str) -> float:
+        """
+        事前計算方式によるカバレッジ損失計算（v2）
+        
+        Args:
+            selected_ambulance_id: 選択された救急車ID
+            available_ambulances_before: 選択前に利用可能だった救急車IDリスト
+            station_h3: 選択された救急車の署所H3
+            
+        Returns:
+            float: カバレッジ損失（0-1の範囲、L6とL13の重み付け平均）
+        """
+        if self.station_coverage_calculator is None:
+            return 0.5  # フォールバック
+        
+        # 利用可能な署所H3の集合を構築
+        available_station_h3s = set()
+        ambulances_per_station = {}
+        
+        for amb_id in available_ambulances_before:
+            if amb_id not in self.ambulance_states:
+                continue
+            amb_state = self.ambulance_states[amb_id]
+            amb_station_h3 = amb_state.get('station_h3')
+            if amb_station_h3:
+                available_station_h3s.add(amb_station_h3)
+                ambulances_per_station[amb_station_h3] = \
+                    ambulances_per_station.get(amb_station_h3, 0) + 1
+        
+        # StationCoverageCalculatorを使用してカバレッジ損失を計算
+        try:
+            L6, L13 = self.station_coverage_calculator.calculate_coverage_loss(
+                departing_station_h3=station_h3,
+                available_station_h3s=available_station_h3s,
+                ambulances_per_station=ambulances_per_station
+            )
+            
+            # L6とL13の重み付け平均を返す
+            coverage_config = self.config.get('reward', {}).get('unified', {})
+            weight_6min = coverage_config.get('L6_weight', 0.5)
+            weight_13min = coverage_config.get('L13_weight', 0.5)
+            
+            combined_loss = L6 * weight_6min + L13 * weight_13min
+            return max(0.0, min(1.0, combined_loss))
+            
+        except Exception as e:
+            print(f"警告: カバレッジ損失計算エラー (v2): {e}")
+            return 0.5
     
     def _get_coverage_sample_points_for_loss(self, center_h3: str, sample_size: int, radius: int) -> List[str]:
         """カバレッジ計算用のサンプルポイントを取得"""
